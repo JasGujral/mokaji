@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import manifestJson from "./panels.json";
+import { listen } from "@tauri-apps/api/event";
 import { api, inTauri } from "./lib/api";
 import type { BootInfo, CalEvent, Core, PanelManifest, Task } from "./lib/types";
 import { Deck, type Size } from "./components/Deck";
@@ -88,10 +89,15 @@ export default function App() {
 
   useEffect(() => {
     void refresh();
-    // B-6's filesystem watcher is an S requirement and lands with the write path; a 60s poll is
-    // the honest interim.
+    // B-6: the vault watcher pushes, so an edit in Obsidian lands here in about a second. The poll
+    // stays as a backstop — a watcher that silently dies would otherwise leave the Deck frozen at
+    // whatever it last read, which looks exactly like a calm day.
     const t = setInterval(() => void refresh(), 60_000);
-    return () => clearInterval(t);
+    let stop: (() => void) | undefined;
+    if (inTauri()) {
+      void listen("vault-changed", () => void refresh()).then((un) => { stop = un; });
+    }
+    return () => { clearInterval(t); stop?.(); };
   }, [refresh]);
 
   const toggle = (id: string) =>
@@ -121,7 +127,7 @@ export default function App() {
       case "briefing": return <BriefingPanel core={core} tasks={tasks} />;
       case "tasks":    return <TasksPanel tasks={tasks} />;
       case "agenda":   return <AgendaPanel events={events} hasCalendar={Boolean(boot?.calendar)} />;
-      case "console":  return <ConsolePanel />;
+      case "console":  return <ConsolePanel onWrote={() => void refresh()} />;
       // C-7: an unknown panel type is reported, never silently dropped — a typo in the manifest
       // must not look identical to a panel you forgot to enable.
       default:

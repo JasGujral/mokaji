@@ -33,9 +33,13 @@ pub struct AppState {
     /// client, no app verification and no browser round-trip, so `calLoad` stops being
     /// permanently zero without waiting on anyone's API console.
     calendar: std::sync::Mutex<Option<PathBuf>>,
-    /// **B-4: dry-run, and it stays that way in M-1/M-2.** The Console can show you exactly what a
-    /// command would do; arming it is a separate decision that belongs with the voice loop's
-    /// spoken confirmation and undo, not with a text box.
+    /// **B-4: dry-run.** Everything the Console previews goes through this one, so a preview
+    /// cannot write by accident — it is not that we remember to be careful, it is that this writer
+    /// has no ability to change a file.
+    preview: std::sync::Mutex<VaultWriter>,
+    /// The armed writer. Reachable only from `apply`, which a person triggers *after* seeing the
+    /// diff — CON-4's "states what it will do" and "undoable for 30 s" are both satisfied by the
+    /// two-step, so a global arm switch would add risk without adding capability.
     writer: std::sync::Mutex<VaultWriter>,
 }
 
@@ -255,8 +259,11 @@ fn preview(state: tauri::State<'_, AppState>, input: String) -> Result<Preview, 
 
     let diff = match edit {
         Some(e) => {
+            // The DRY-RUN writer. Using the armed one here would make every keystroke that parses
+            // into a mutating intent write to the vault — which is exactly the bug the two-writer
+            // split exists to make impossible rather than merely unlikely.
             let mut w = state
-                .writer
+                .preview
                 .lock()
                 .map_err(|_| "writer lock poisoned".to_string())?;
             match w.apply(&e, now) {
@@ -278,6 +285,76 @@ fn preview(state: tauri::State<'_, AppState>, input: String) -> Result<Preview, 
         diff,
         unmatched: matches!(intent, Intent::Unmatched(_)),
     })
+}
+
+/// The result of actually applying a command.
+#[derive(Serialize)]
+pub struct Applied {
+    /// Which file changed.
+    path: String,
+    /// The diff that was written.
+    diff: String,
+    /// CON-4: hand this back to `undo_write` within 30 seconds.
+    undo_id: String,
+    /// Seconds remaining on the undo window, for the countdown.
+    undo_seconds: i64,
+}
+
+/// Apply a Console command **for real**.
+///
+/// Deliberately a separate command from `preview`, taking the same input string rather than a
+/// token from the preview: the person types, sees the diff, and then asks for it. Nothing here can
+/// run without that second, explicit action.
+///
+/// # Errors
+/// If the intent is not a mutating one, or the write is refused (B-3 drift, B-5 snapshot failure).
+#[tauri::command]
+fn apply(state: tauri::State<'_, AppState>, input: String) -> Result<Applied, String> {
+    let now = chrono::Local::now();
+    let intent = parse_intent(&input, now.date_naive());
+    let edit = match &intent {
+        Intent::AddTask { text, due } => Edit::AddTask {
+            text: text.clone(),
+            due: *due,
+        },
+        Intent::Capture { text } => Edit::Capture { text: text.clone() },
+        other => {
+            return Err(format!(
+                "`{}` changes nothing — nothing to apply",
+                other.describe()
+            ))
+        }
+    };
+
+    let mut w = state
+        .writer
+        .lock()
+        .map_err(|_| "writer lock poisoned".to_string())?;
+    let receipt = w.apply(&edit, now).map_err(|e| e.to_string())?;
+    let undo_id = receipt
+        .undo_id
+        .ok_or_else(|| "write reported no undo token".to_string())?;
+    Ok(Applied {
+        path: receipt.path,
+        diff: receipt.diff,
+        undo_seconds: w.undo_remaining(now).unwrap_or(0),
+        undo_id,
+    })
+}
+
+/// Undo a write inside the 30-second window (CON-4).
+///
+/// # Errors
+/// If the window has closed or the id is unknown — and it says which, because "too late" and
+/// "never happened" call for different reactions.
+#[tauri::command]
+fn undo_write(state: tauri::State<'_, AppState>, undo_id: String) -> Result<String, String> {
+    let mut w = state
+        .writer
+        .lock()
+        .map_err(|_| "writer lock poisoned".to_string())?;
+    w.undo(&undo_id, chrono::Local::now())
+        .map_err(|e| e.to_string())
 }
 
 /// The local grammar, for `help` (CON-1).
@@ -520,6 +597,44 @@ async fn health(state: tauri::State<'_, AppState>) -> Result<Vec<HealthView>, St
     Ok(out)
 }
 
+/// **B-6 — watch the vault and tell the Deck when it changes.**
+///
+/// A HUD that is up to sixty seconds stale is a HUD you check twice, and checking twice is how a
+/// glanceable thing becomes an app you open. Edits made in Obsidian should appear here in about a
+/// second.
+///
+/// Debounced, because a single save in an editor produces a burst of filesystem events and
+/// re-reading the vault once per event would spend more time reading than the poll it replaces.
+fn watch_vault(app: tauri::AppHandle, root: PathBuf) {
+    use notify::{RecursiveMode, Watcher};
+    use tauri::Emitter;
+
+    std::thread::spawn(move || {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let Ok(mut watcher) = notify::recommended_watcher(move |res| {
+            let _ = tx.send(res);
+        }) else {
+            return;
+        };
+        if watcher.watch(&root, RecursiveMode::Recursive).is_err() {
+            return;
+        }
+
+        loop {
+            // Block for the first event, then swallow everything that arrives in the next 400 ms.
+            let Ok(first) = rx.recv() else { return };
+            if first.is_err() {
+                continue;
+            }
+            while rx
+                .recv_timeout(std::time::Duration::from_millis(400))
+                .is_ok()
+            {}
+            let _ = app.emit("vault-changed", ());
+        }
+    });
+}
+
 /// Build and run the app.
 ///
 /// # Panics
@@ -528,22 +643,40 @@ async fn health(state: tauri::State<'_, AppState>) -> Result<Vec<HealthView>, St
 pub fn run() {
     let vault = discover::discover();
     let calendar = discover::remembered_calendar();
+    let watched = vault.clone();
     // B-5's snapshot destination sits OUTSIDE the vault, so a snapshot never becomes a note.
     let snapshots = vault
         .as_ref()
         .and_then(|v| v.parent().map(|p| p.join(".mokaji-snapshots")))
         .unwrap_or_else(std::env::temp_dir);
-    let writer = std::sync::Mutex::new(VaultWriter::new(
-        vault.clone().unwrap_or_default(),
+    let snapshotter = || {
         Box::new(CopySnapshot {
-            dest_root: snapshots,
-        }),
+            dest_root: snapshots.clone(),
+        })
+    };
+    // Named `preview_writer` rather than `preview`: a local binding of that name shadows the
+    // command function of the same name, and the resulting error is a long way from the cause.
+    let preview_writer = std::sync::Mutex::new(VaultWriter::new(
+        vault.clone().unwrap_or_default(),
+        snapshotter(),
     ));
+    // `.armed()` is the only place in the codebase that turns off B-4's default, and it is one
+    // grep away from being found.
+    let writer = std::sync::Mutex::new(
+        VaultWriter::new(vault.clone().unwrap_or_default(), snapshotter()).armed(),
+    );
     tauri::Builder::default()
         .manage(AppState {
             vault: std::sync::Mutex::new(vault),
             calendar: std::sync::Mutex::new(calendar),
+            preview: preview_writer,
             writer,
+        })
+        .setup(move |app| {
+            if let Some(v) = watched.clone() {
+                watch_vault(app.handle().clone(), v);
+            }
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             boot_info,
@@ -557,6 +690,8 @@ pub fn run() {
             set_vault,
             set_calendar,
             agenda,
+            apply,
+            undo_write,
             secret_status,
             set_secret,
             clear_secret
