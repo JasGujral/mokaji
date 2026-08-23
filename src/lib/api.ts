@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Applied, BootInfo, CalEvent, Chaser, Core, HealthRow, Metric, Preview, Task } from "./types";
+import type { Action, Applied, BootInfo, CalEvent, Chaser, Core, HealthRow, Metric, Preview, Task } from "./types";
 
 /** Every path to data goes through a Tauri command. The renderer holds no credential, opens no
  *  socket, and never touches the filesystem — SEC-1's allow-list is the entire surface. */
@@ -22,6 +22,15 @@ export const api = {
   secretStatus: () => invoke<Record<string, boolean>>("secret_status"),
   setSecret: (name: string, value: string) => invoke<void>("set_secret", { name, value }),
   clearSecret: (name: string) => invoke<void>("clear_secret", { name }),
+  /** CON-3: the one parser, reachable from the Console and the voice loop alike. Reports what an
+   *  utterance means; deliberately does not act on it. */
+  act: (input: string) => invoke<Action>("act", { input }),
+  windowHide: () => invoke<void>("window_hide"),
+  windowShow: () => invoke<void>("window_show"),
+  openNote: (query: string) => invoke<string>("open_note", { query }),
+  /** Folders that look like calendars — `~/Library/Calendars` is the zero-credential route to
+   *  every account macOS already knows about. */
+  suggestCalendars: () => invoke<string[]>("suggest_calendars"),
 };
 
 /** Whether we are running inside the Tauri shell at all.

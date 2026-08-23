@@ -42,16 +42,31 @@ pub enum Intent {
         /// Substring to match against open tasks.
         keyword: String,
     },
-    /// `tasks` — show the queue.
-    ShowTasks,
-    /// `agenda` — show today's events.
-    ShowAgenda,
     /// `status` — the Reactor Core readout.
     Status,
     /// `help` — the grammar.
     Help,
     /// `clear` — clear the console log.
     Clear,
+    /// `open <name>` — open a note or project in Obsidian.
+    ///
+    /// X-6 superseded `obsidian://` as the *read* path, and kept it as UX. Opening the real editor
+    /// is one of the few things MOKaji should not try to do itself.
+    Open {
+        /// What to look for. Matched against note titles by the caller.
+        query: String,
+    },
+    /// `hide` / `dismiss` — get out of the way.
+    HideWindow,
+    /// `show` / `come back` — return.
+    ShowWindow,
+    /// `show <panel>` / `hide <panel>` — toggle a panel on the Deck.
+    TogglePanel {
+        /// The panel's name or id, matched loosely by the caller.
+        name: String,
+        /// True to show, false to hide.
+        on: bool,
+    },
     /// CON-2: nothing matched. The caller decides whether to escalate to a model.
     Unmatched(String),
 }
@@ -82,11 +97,15 @@ impl Intent {
             Self::CompleteTask { keyword } => {
                 format!("Tick the first open task matching \"{keyword}\".")
             }
-            Self::ShowTasks => "Show the task queue.".into(),
-            Self::ShowAgenda => "Show today's agenda.".into(),
             Self::Status => "Show the Reactor Core readout.".into(),
             Self::Help => "Show the command grammar.".into(),
             Self::Clear => "Clear the console.".into(),
+            Self::Open { query } => format!("Open \"{query}\" in Obsidian."),
+            Self::HideWindow => "Hide the window.".into(),
+            Self::ShowWindow => "Bring the window back.".into(),
+            Self::TogglePanel { name, on } => {
+                format!("{} the {name} panel.", if *on { "Show" } else { "Hide" })
+            }
             Self::Unmatched(s) => format!("No local command matched \"{s}\"."),
         }
     }
@@ -103,11 +122,19 @@ pub const GRAMMAR: &[(&str, &str)] = &[
         "done <keyword>",
         "tick the first open task matching the keyword",
     ),
-    ("tasks", "show the open queue"),
-    ("agenda", "show today's events"),
+    (
+        "tasks / agenda / chasers / vitals",
+        "bring a panel to the front",
+    ),
     ("status", "show the Reactor Core readout"),
     ("help", "this list"),
     ("clear", "clear the console"),
+    ("open <name>", "open a note or project in Obsidian"),
+    (
+        "hide / show",
+        "get the window out of the way, or bring it back",
+    ),
+    ("show|hide <panel>", "toggle a panel on the Deck"),
 ];
 
 /// Parse an utterance — typed or transcribed — into an [`Intent`].
@@ -125,14 +152,60 @@ pub fn parse(input: &str, today: NaiveDate) -> Intent {
     // Bare verbs first. Speech recognisers add trailing punctuation and the odd filler word, so
     // match on the stripped form rather than demanding an exact string.
     match strip_filler(&lower).as_str() {
-        "tasks" | "task queue" | "show tasks" | "show my tasks" => return Intent::ShowTasks,
-        "agenda" | "show agenda" | "what's on today" | "whats on today" => {
-            return Intent::ShowAgenda
+        // "what's on today" is how people ask for the agenda; it is an alias for the panel
+        // rather than an intent of its own, because CON-3 means one utterance gets one meaning.
+        "what's on today" | "whats on today" | "what is on today" => {
+            return Intent::TogglePanel {
+                name: "agenda".into(),
+                on: true,
+            }
         }
         "status" | "readiness" | "how am i doing" => return Intent::Status,
         "help" | "commands" => return Intent::Help,
         "clear" | "clear console" => return Intent::Clear,
+        // Window control. These are the commands that make a voice assistant feel like it is on
+        // your desk rather than in a window you have to go and find.
+        "hide" | "hide window" | "dismiss" | "go away" | "get out of the way" => {
+            return Intent::HideWindow
+        }
+        "show" | "show window" | "come back" | "wake up" | "open mokaji" => {
+            return Intent::ShowWindow
+        }
         _ => {}
+    }
+
+    // A bare panel name means "put it in front of me". There is deliberately no `ShowTasks`
+    // intent any more: "tasks", "show tasks" and "show the task queue panel" are the same
+    // sentence to a person, and CON-3 exists precisely to stop one utterance acquiring two
+    // meanings that then drift apart.
+    if let Some(name) = panel_name(&strip_filler(&lower)) {
+        return Intent::TogglePanel { name, on: true };
+    }
+
+    // `show tasks` and `hide agenda` toggle panels; the bare verbs above already caught the
+    // window-level cases, so anything left with a name is about the Deck.
+    for (prefix, on) in [
+        ("show ", true),
+        ("show me ", true),
+        ("open the ", true),
+        ("open ", true),
+        ("bring up ", true),
+        ("hide ", false),
+        ("close ", false),
+        ("dismiss ", false),
+    ] {
+        if let Some(rest) = after_any(&lower, raw, &[prefix]) {
+            if let Some(name) = panel_name(&strip_filler(&rest)) {
+                return Intent::TogglePanel { name, on };
+            }
+        }
+    }
+
+    if let Some(rest) = after_any(&lower, raw, &["open ", "show me ", "find "]) {
+        let query = strip_filler(&rest);
+        if !query.is_empty() {
+            return Intent::Open { query };
+        }
     }
 
     if let Some(rest) = after_any(&lower, raw, &["done ", "complete ", "finish ", "tick "]) {
@@ -186,6 +259,45 @@ fn after_any(lower: &str, raw: &str, prefixes: &[&str]) -> Option<String> {
         }
     }
     None
+}
+
+/// Panel names the Deck knows about, so `show agenda` toggles a panel and `show me the mortgage
+/// note` does not. A closed list rather than a heuristic: guessing wrong here means the wrong
+/// thing happens silently, and the correct answer is knowable.
+///
+/// Returns the name with the articles and the word "panel" stripped, so the caller matches
+/// against one shape rather than five.
+fn panel_name(input: &str) -> Option<String> {
+    let mut n = input.trim().to_lowercase();
+    for lead in ["the ", "my ", "a "] {
+        if let Some(r) = n.strip_prefix(lead) {
+            n = r.trim().to_string();
+        }
+    }
+    for tail in [" panel", " tile", " view"] {
+        if let Some(r) = n.strip_suffix(tail) {
+            n = r.trim().to_string();
+        }
+    }
+    const PANELS: [&str; 12] = [
+        "core",
+        "reactor core",
+        "briefing",
+        "daily briefing",
+        "console",
+        "command console",
+        "tasks",
+        "task queue",
+        "agenda",
+        "today's agenda",
+        "chasers",
+        "vitals",
+    ];
+    if PANELS.contains(&n.as_str()) {
+        Some(n)
+    } else {
+        None
+    }
 }
 
 fn strip_filler(s: &str) -> String {
@@ -409,7 +521,13 @@ mod tests {
 
     #[test]
     fn bare_verbs() {
-        assert_eq!(parse("tasks", today()), Intent::ShowTasks);
+        assert_eq!(
+            parse("tasks", today()),
+            Intent::TogglePanel {
+                name: "tasks".into(),
+                on: true
+            }
+        );
         assert_eq!(parse("  STATUS  ", today()), Intent::Status);
         assert_eq!(parse("how am I doing?", today()), Intent::Status);
         assert_eq!(parse("help", today()), Intent::Help);
@@ -442,6 +560,61 @@ mod tests {
             parse("add a task to call the accountant tomorrow", today()).describe(),
             "Add task \"call the accountant\", due 2026-08-24."
         );
+    }
+
+    #[test]
+    fn window_control_is_part_of_the_grammar() {
+        // These are what make a voice assistant feel like it is on your desk rather than in a
+        // window you have to go and find.
+        assert_eq!(parse("hide", today()), Intent::HideWindow);
+        assert_eq!(parse("get out of the way", today()), Intent::HideWindow);
+        assert_eq!(parse("come back", today()), Intent::ShowWindow);
+        assert_eq!(parse("wake up", today()), Intent::ShowWindow);
+    }
+
+    #[test]
+    fn panel_names_toggle_panels_and_everything_else_opens_a_note() {
+        // A closed list of panel names rather than a heuristic: guessing wrong means the wrong
+        // thing happens silently, and the right answer is knowable.
+        assert_eq!(
+            parse("show agenda", today()),
+            Intent::TogglePanel {
+                name: "agenda".into(),
+                on: true
+            }
+        );
+        assert_eq!(
+            parse("hide the task queue panel", today()),
+            Intent::TogglePanel {
+                name: "task queue".into(),
+                on: false
+            }
+        );
+        assert_eq!(
+            parse("open the tide survey", today()),
+            Intent::Open {
+                query: "the tide survey".into()
+            }
+        );
+        assert_eq!(
+            parse("show me the station upkeep note", today()),
+            Intent::Open {
+                query: "the station upkeep note".into()
+            }
+        );
+    }
+
+    #[test]
+    fn window_and_panel_intents_change_nothing_in_the_vault() {
+        for i in [
+            parse("hide", today()),
+            parse("come back", today()),
+            parse("show agenda", today()),
+            parse("open the tide survey", today()),
+        ] {
+            assert!(!i.is_mutating(), "{i:?} must not need a confirmation step");
+            assert!(i.describe().ends_with('.'));
+        }
     }
 
     #[test]

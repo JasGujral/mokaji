@@ -551,7 +551,7 @@ dependencies = [
 
 [[package]]
 name = "mokaji-cli"
-version = "0.0.1"
+version = "0.0.4"
 dependencies = [
  "chrono",
  "mokaji-connector-ics",
@@ -563,7 +563,7 @@ dependencies = [
 
 [[package]]
 name = "mokaji-connector-ics"
-version = "0.0.1"
+version = "0.0.4"
 dependencies = [
  "async-trait",
  "chrono",
@@ -574,7 +574,7 @@ dependencies = [
 
 [[package]]
 name = "mokaji-connector-vault"
-version = "0.0.1"
+version = "0.0.4"
 dependencies = [
  "async-trait",
  "chrono",
@@ -586,7 +586,7 @@ dependencies = [
 
 [[package]]
 name = "mokaji-connectors-fake"
-version = "0.0.1"
+version = "0.0.4"
 dependencies = [
  "async-trait",
  "chrono",
@@ -597,7 +597,7 @@ dependencies = [
 
 [[package]]
 name = "mokaji-core"
-version = "0.0.1"
+version = "0.0.4"
 dependencies = [
  "async-trait",
  "chrono",
@@ -610,7 +610,7 @@ dependencies = [
 
 [[package]]
 name = "mokaji-net"
-version = "0.0.1"
+version = "0.0.4"
 dependencies = [
  "chrono",
  "reqwest",
@@ -620,7 +620,7 @@ dependencies = [
 
 [[package]]
 name = "mokaji-secrets"
-version = "0.0.1"
+version = "0.0.4"
 dependencies = [
  "security-framework",
  "thiserror",

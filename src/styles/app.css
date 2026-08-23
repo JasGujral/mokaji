@@ -257,3 +257,157 @@ a.src:hover { color: var(--neon-soft); }
 
 /* REL-7: a visible focus ring on every interactive element. */
 :focus-visible { outline: 2px solid var(--neon); outline-offset: 2px; }
+
+/* =============================================================== reactor core
+ * Four corner readouts around the instrument, and a footer that changes with readiness. The
+ * handoff's philosophy: it reads YOU, not the machine. A number without the thing it is about is
+ * a number you cannot act on — hence a note under every value. */
+
+.core { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+
+.core-grid {
+  flex: 1; min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr minmax(120px, 1.4fr) 1fr;
+  grid-template-rows: 1fr auto 1fr;
+  gap: 6px 10px;
+  align-items: center;
+}
+.core-center { grid-column: 2; grid-row: 1 / span 3; display: flex; align-items: center; justify-content: center; }
+.core-readout { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.core-readout.tl { grid-column: 1; grid-row: 1; }
+.core-readout.tr { grid-column: 3; grid-row: 1; text-align: right; align-items: flex-end; }
+.core-readout.bl { grid-column: 1; grid-row: 3; }
+.core-readout.br { grid-column: 3; grid-row: 3; text-align: right; align-items: flex-end; }
+
+.core-label {
+  font-family: var(--font-display); font-size: 8px; letter-spacing: .26em;
+  text-transform: uppercase; color: var(--muted-2); white-space: nowrap;
+}
+.core-value {
+  font-family: var(--font-display); font-weight: 700; font-size: 22px; line-height: 1.1;
+  color: var(--neon-soft);
+  text-shadow: 0 0 calc(14px * var(--glow)) oklch(0.85 0.16 var(--hue) / 0.4);
+}
+.core-note { font-size: 10px; color: var(--muted); white-space: nowrap;
+             overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.spark { width: 100%; height: 16px; margin-top: 3px; opacity: .8; }
+
+.core-ring { width: 100%; height: auto; max-height: 230px; display: block; }
+
+/* Rotations at 9 / 18 / 26s — coprime-ish, so they never resync and the movement never settles
+ * into a pattern your eye learns to ignore. */
+.spin-a { animation: spin 9s linear infinite;  transform-origin: 100px 100px; }
+.spin-b { animation: spin 18s linear infinite reverse; transform-origin: 100px 100px; }
+.spin-c { animation: spin 26s linear infinite; transform-origin: 100px 100px; }
+.core-pulse { animation: corepulse 3.4s ease-in-out infinite; transform-origin: 100px 100px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes corepulse {
+  0%, 100% { opacity: .55; transform: scale(0.97); }
+  50%      { opacity: 1;   transform: scale(1.03); }
+}
+
+.core-footer {
+  flex: none; display: flex; align-items: center; gap: 12px; padding-top: 10px; margin-top: 6px;
+  border-top: 1px solid var(--hair); color: var(--muted); font-size: 11px;
+}
+.core-bandwidth {
+  position: relative; flex: none; font-size: 10px; color: var(--muted-2);
+  padding-bottom: 5px; min-width: 108px;
+}
+.core-bandwidth > i {
+  position: absolute; left: 0; bottom: 0; height: 2px; border-radius: 1px;
+  background: var(--neon-dim); transition: width var(--reflow);
+  box-shadow: 0 0 calc(6px * var(--glow)) oklch(.85 .16 var(--hue) / .5);
+}
+
+/* ============================================================== voice overlay
+ * A translucent full-screen layer over the live app, per the handoff: the Deck stays visible
+ * behind it, so summoning MOKaji does not mean losing sight of what you were looking at. */
+
+.overlay {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+  background: oklch(0.07 0.015 230 / 0.72);
+  backdrop-filter: blur(10px) saturate(1.15);
+  animation: fade .16s ease-out;
+}
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+.overlay .eq { display: flex; align-items: flex-end; gap: 5px; height: 84px; }
+.overlay .eq i {
+  display: block; width: 6px; height: 14%; border-radius: 3px; background: var(--neon-dim);
+  transition: height .2s ease, background .2s ease;
+}
+/* Idle bars sit still. An equaliser that dances while nothing is being heard is a lie about
+ * what the machine is doing, and this is the one screen where that matters most. */
+.overlay .eq i.live {
+  background: var(--neon);
+  box-shadow: 0 0 calc(14px * var(--glow)) oklch(.85 .16 var(--hue) / .6);
+  animation: eq 1.1s ease-in-out infinite;
+}
+@keyframes eq { 0%, 100% { height: 12%; } 50% { height: 100%; } }
+
+.overlay .heard .ghost { color: var(--muted-2); letter-spacing: .1em; }
+.overlay .reply.write { color: var(--warn, oklch(.84 .15 75)); }
+
+.overlay .hint { display: flex; align-items: center; gap: 14px; }
+.overlay .hint .mic {
+  font: inherit; letter-spacing: .18em; text-transform: uppercase;
+  padding: 6px 14px; border-radius: 999px; cursor: pointer;
+  background: transparent; color: var(--neon-soft); border: 1px solid var(--hair-strong);
+  transition: box-shadow .2s ease, color .2s ease, border-color .2s ease;
+}
+.overlay .hint .mic:hover { border-color: var(--neon-dim); color: var(--neon); }
+.overlay .hint .mic.live {
+  color: var(--bg, #06121a); background: var(--neon); border-color: var(--neon);
+  box-shadow: 0 0 calc(22px * var(--glow)) oklch(.85 .16 var(--hue) / .55);
+}
+
+.overlay .undo {
+  font-family: var(--font-display); font-size: 11px; letter-spacing: .16em;
+  text-transform: uppercase; padding: 8px 18px; border-radius: 999px; cursor: pointer;
+  background: transparent; color: var(--text); border: 1px solid var(--hair-strong);
+}
+.overlay .undo:hover { border-color: var(--neon-dim); color: var(--neon); }
+
+.overlay .heard {
+  font-family: var(--font-display); font-size: 20px; letter-spacing: .04em;
+  color: var(--text); text-shadow: 0 1px 10px rgba(0,0,0,.6); text-align: center;
+  max-width: 68ch; min-height: 26px;
+}
+.overlay .reply {
+  font-size: 13px; color: var(--neon-soft); text-shadow: 0 2px 18px rgba(0,0,0,.7);
+  text-align: center; max-width: 68ch; line-height: 1.7;
+}
+.overlay .diff {
+  font-size: 10px; color: var(--muted); white-space: pre; text-align: left;
+  max-height: 180px; overflow: auto; padding: 10px 14px; border-radius: var(--radius-sm);
+  border: 1px solid var(--hair); background: oklch(0.1 0.02 235 / 0.6);
+}
+.overlay input {
+  width: min(620px, 80vw); padding: 12px 16px; border-radius: 8px; text-align: center;
+  background: oklch(0.12 0.02 235 / 0.8); border: 1px solid var(--hair-strong);
+  color: var(--text); font-family: var(--font-mono); font-size: 15px;
+}
+.overlay input:focus { outline: none; box-shadow: 0 0 calc(18px * var(--glow)) oklch(.85 .16 var(--hue) / .35); }
+.overlay .hint { font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
+                 font-family: var(--font-display); color: var(--muted-2); }
+
+/* An unmissable indicator whenever the microphone is live (V-7). Deliberately loud: a HUD that
+ * listens without saying so is the anti-pattern this whole product is arguing against. */
+.mic-live {
+  position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 90;
+  background: linear-gradient(90deg, transparent, var(--neon), transparent);
+  animation: sweep 2.2s linear infinite;
+}
+@keyframes sweep { 0% { opacity: .35; } 50% { opacity: 1; } 100% { opacity: .35; } }
+
+/* A discovered path, offered rather than typed. Guessing where your calendars live is cheap and
+ * reversible; making you find out is not. */
+.settings .chip {
+  font-family: var(--font-mono); font-size: 10px; padding: 4px 9px; cursor: pointer;
+  border-radius: 999px; background: transparent; color: var(--neon-soft);
+  border: 1px solid var(--hair-strong);
+}
+.settings .chip:hover { border-color: var(--neon-dim); color: var(--neon); }
