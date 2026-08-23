@@ -1,0 +1,5 @@
+# Pinned so every machine builds the same way. Host is aarch64-apple-darwin (Apple Silicon);
+# cross-platform is post-v1, so no extra targets are declared.
+[toolchain]
+channel    = "stable"
+components = ["rustfmt", "clippy"]

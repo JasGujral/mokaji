@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mokaji-core",
+    "crates/mokaji-net",
+    "crates/mokaji-secrets",
+    "crates/mokaji-connector-vault",
+    "crates/mokaji-cli",
+    "crates/mokaji-connectors-fake",
+]
+
+[workspace.package]
+version    = "0.0.1"
+edition    = "2021"
+license    = "Apache-2.0"
+publish    = false
+rust-version = "1.85"
+
+[workspace.dependencies]
+async-trait = "0.1"
+chrono      = { version = "0.4", features = ["serde"] }
+futures     = { version = "0.3", default-features = false, features = ["std", "async-await"] }
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+thiserror   = "2"
+tokio       = { version = "1", features = ["rt", "sync", "macros"] }
+
+[profile.release]
+lto       = true
+codegen-units = 1
+strip     = true

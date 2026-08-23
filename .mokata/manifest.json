@@ -1,0 +1,102 @@
+{
+  "manifest_version": 1,
+  "mokata": {
+    "version": "0.0.18"
+  },
+  "profile": "full",
+  "layers": {
+    "engine": {
+      "enabled": true
+    },
+    "knowledge": {
+      "enabled": true
+    },
+    "memory": {
+      "enabled": true
+    },
+    "governance": {
+      "enabled": true
+    }
+  },
+  "capabilities": {
+    "code_graph": {
+      "description": "Structural codebase queries (callers/callees, imports, blast-radius); the embedded AST floor answers on Python, grep is the universal fallback.",
+      "layer": "knowledge",
+      "fallback": [
+        "code-review-graph",
+        "serena",
+        "ast",
+        "ripgrep",
+        "grep"
+      ]
+    },
+    "memory_store": {
+      "description": "Where persistent/decision memory is stored; SQLite is the guaranteed default backend.",
+      "layer": "memory",
+      "fallback": [
+        "sqlite"
+      ]
+    }
+  },
+  "tools": {
+    "code-review-graph": {
+      "provides": "code_graph",
+      "kind": "mcp",
+      "version": null,
+      "detect": {
+        "type": "command",
+        "name": "code-review-graph"
+      },
+      "enabled": true
+    },
+    "serena": {
+      "provides": "code_graph",
+      "kind": "mcp",
+      "version": null,
+      "detect": {
+        "type": "command",
+        "name": "serena"
+      },
+      "enabled": true
+    },
+    "ast": {
+      "provides": "code_graph",
+      "kind": "builtin",
+      "version": null,
+      "detect": {
+        "type": "python_files"
+      },
+      "enabled": true
+    },
+    "ripgrep": {
+      "provides": "code_graph",
+      "kind": "cli",
+      "version": null,
+      "detect": {
+        "type": "command",
+        "name": "rg"
+      },
+      "enabled": true
+    },
+    "grep": {
+      "provides": "code_graph",
+      "kind": "builtin",
+      "version": null,
+      "detect": {
+        "type": "always"
+      },
+      "enabled": true
+    },
+    "sqlite": {
+      "provides": "memory_store",
+      "kind": "library",
+      "version": null,
+      "detect": {
+        "type": "python_module",
+        "name": "sqlite3"
+      },
+      "enabled": true
+    }
+  },
+  "settings": {}
+}

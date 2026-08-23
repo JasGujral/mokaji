@@ -1,0 +1,12 @@
+MOKaji
+Copyright 2026 Jasmeet Gujral
+
+This product includes software developed by Jasmeet Gujral.
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+---
+
+Third-party components are listed with their licences in LICENSING.md. No bundled model, voice,
+font or dataset enters a release without a row in that file's audit table — a licence audit of
+every shipped asset is an exit gate on milestone M-3.

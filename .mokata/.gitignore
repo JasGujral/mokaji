@@ -1,0 +1,6 @@
+# mokata keeps all its data under .mokata/. Committed config (manifest.json,
+# constitution.md, an exported stack if you choose to commit it, and the shared design
+# vault/) lives at this root; everything transient/runtime — pipeline state, resume
+# checkpoints, the freshness index, caches, the SQLite memory store, and the audit ledger —
+# lives under temp_local/.
+temp_local/

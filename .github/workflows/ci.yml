@@ -1,0 +1,95 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:        # so CI can be re-run by hand without an empty commit
+
+# Cost control. This repo is public, so standard GitHub-hosted runners are free and unlimited —
+# but only on ubuntu. macOS runners bill at roughly 10x Linux, so do not casually add one: use a
+# macOS job only for things that genuinely cannot run elsewhere (Keychain, Metal, Tauri bundling),
+# and gate it behind a release or a manual dispatch rather than every push.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: fmt
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: test
+        run: cargo test --workspace
+
+  # PRIV-5 / PRIV-1, enforced structurally rather than by convention: only mokaji-net may depend
+  # on a networking crate. If this ever fails, someone has given another crate — possibly the
+  # audio crate — the ability to open a socket.
+  network-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: assert no crate but mokaji-net can reach the network
+        run: |
+          set -euo pipefail
+          NET_CRATES='reqwest|hyper|ureq|curl|tokio-tungstenite|socket2|tiny_http|axum|warp'
+          fail=0
+          for manifest in crates/*/Cargo.toml src-tauri/Cargo.toml; do
+            # NB: this must keep passing once crates/mokaji-audio exists (M-2). If it ever fails
+            # for the audio crate, PRIV-1 has been broken — do not "fix" it by adding an exception.
+            [ -f "$manifest" ] || continue
+            case "$manifest" in */mokaji-net/*) continue ;; esac
+            if grep -Eq "^[[:space:]]*($NET_CRATES)[[:space:]]*=" "$manifest"; then
+              echo "::error file=$manifest::networking dependency outside mokaji-net (PRIV-5)"
+              fail=1
+            fi
+          done
+          exit $fail
+
+  # PRIV-4: credentials live in the macOS Keychain, never in the tree. This is what makes that
+  # checkable rather than merely asserted. Mirrors .githooks/pre-commit, which catches it earlier.
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # scan history, not just the tip
+      # The gitleaks *action* is free for public repos but asks organisations for a licence key.
+      # Running the pinned binary directly sidesteps that entirely and is reproducible.
+      - name: gitleaks
+        env:
+          GITLEAKS_VERSION: 8.28.0
+        run: |
+          set -euo pipefail
+          curl -sSLo /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          /tmp/gitleaks detect --config .gitleaks.toml --redact --verbose --exit-code 1
+
+  # The repo is public and MOKaji reads one person's life. Nothing personal may land in a commit.
+  personal-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/check-personal-data.sh
+      # `.private-terms` is the vault-content denylist. It is the disclosure it exists to prevent,
+      # so it must never be tracked — the pre-commit hook refuses it, and this is the backstop for
+      # a commit made with --no-verify or on a clone where hooks were never installed.
+      - name: the denylist must never be committed
+        run: |
+          if git ls-files --error-unmatch .private-terms >/dev/null 2>&1; then
+            echo "::error file=.private-terms::the vault denylist is tracked — it must never be committed"
+            exit 1
+          fi
+          echo "denylist not tracked — correct"

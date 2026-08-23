@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# MOKaji pre-commit. Install with: ./scripts/install-hooks.sh
+#
+# Cheap, local, and deliberately paranoid about one thing: nothing credential-shaped reaches a
+# commit. PRIV-4 says credentials live in the macOS Keychain; this is the check that makes it true.
+set -uo pipefail
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+fail=0
+
+say() { printf '\033[31mpre-commit: %s\033[0m\n' "$1" >&2; }
+
+# 1. Filenames that should never be committed, whatever is in them.
+while IFS= read -r f; do
+  case "$f" in
+    .env|.env.*|*.pem|*.p12|*.key|\
+    credentials.json|client_secret*.json|token*.json|service-account*.json|\
+    *.gguf|*.onnx|*.wav|*.flac)
+      [ "$f" = ".env.example" ] && continue
+      say "refusing to commit '$f' — credentials belong in the macOS Keychain (PRIV-4)"
+      fail=1
+      ;;
+  esac
+done <<< "$staged"
+
+# 2. Content patterns, checked only in the staged version of each file.
+patterns='GOCSPX-[A-Za-z0-9_-]{28,}|sk-ant-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{60,}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+while IFS= read -r f; do
+  case "$f" in SECURITY.md|.env.example|.gitleaks.toml|.githooks/pre-commit) continue ;; esac
+  if git show ":$f" 2>/dev/null | grep -Eq "$patterns"; then
+    say "'$f' contains something shaped like a live credential"
+    fail=1
+  fi
+done <<< "$staged"
+
+# 3. PRIV-5 / PRIV-1 — the network boundary. Only mokaji-net may reach the network, so that
+#    "audio never leaves the device" is true by construction rather than by good intentions.
+net='reqwest|hyper|ureq|curl|tokio-tungstenite|socket2|tiny_http|axum|warp'
+while IFS= read -r f; do
+  case "$f" in
+    crates/mokaji-net/Cargo.toml) continue ;;
+    */Cargo.toml|Cargo.toml)
+      if git show ":$f" 2>/dev/null | grep -Eq "^[[:space:]]*($net)[[:space:]]*="; then
+        say "'$f' adds a networking dependency outside mokaji-net (PRIV-5)"
+        say "if this is deliberate, it is a security review — commit with --no-verify and say why"
+        fail=1
+      fi
+      ;;
+  esac
+done <<< "$staged"
+
+# 4. THE HARD RULE: nothing from the operator's vault, ever.
+#    Pattern-matching cannot enforce this on its own — a real task looks exactly like an invented
+#    one. So scripts/gen-private-terms.sh reads the vault into a gitignored denylist, and every
+#    staged change is checked against it. A phrase that exists in the vault cannot be committed.
+if [ -s .private-terms ]; then
+  while IFS= read -r f; do
+    case "$f" in .private-terms) ;; *) ;; esac
+    [ -f "$f" ] || continue
+    if git show ":$f" 2>/dev/null | grep -oFf .private-terms -i 2>/dev/null | head -1 | grep -q .; then
+      hit=$(git show ":$f" | grep -oFf .private-terms -i | head -1)
+      say "'$f' contains vault content: \"$hit\""
+      say "nothing from the vault enters this repo — invent a fixture instead (SECURITY.md)"
+      fail=1
+    fi
+  done <<< "$staged"
+else
+  # Absence is not safety. Say so once, quietly, rather than passing in silence.
+  say "note: .private-terms is missing — run ./scripts/gen-private-terms.sh <vault> to arm the vault-content check"
+fi
+
+# The denylist is itself the disclosure it prevents.
+if echo "$staged" | grep -qx '.private-terms'; then
+  say "refusing to commit .private-terms — it IS the private content"
+  fail=1
+fi
+
+# 5. Personal data. This repo is public; MOKaji reads one person's life. Those are only
+#    compatible if nothing personal ever lands in a commit.
+if [ -x scripts/check-personal-data.sh ]; then
+  # shellcheck disable=SC2086
+  if ! scripts/check-personal-data.sh $staged >/dev/null 2>&1; then
+    scripts/check-personal-data.sh $staged >&2
+    fail=1
+  fi
+fi
+
+# 6. Formatting, so CI never fails on something this cheap to catch. Only when Rust is actually
+#    being committed — a missing toolchain or a docs-only commit must not block anything.
+if echo "$staged" | grep -q '\.rs$' && [ -f Cargo.toml ] && command -v cargo >/dev/null 2>&1; then
+  if ! cargo fmt --all --check >/dev/null 2>&1; then
+    say "cargo fmt --all would change files — run it and restage"
+    fail=1
+  fi
+fi
+
+exit $fail
