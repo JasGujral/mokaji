@@ -568,6 +568,7 @@ dependencies = [
  "chrono",
  "mokaji-core",
  "serde_json",
+ "thiserror",
  "tokio",
 ]
 

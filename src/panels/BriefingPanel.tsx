@@ -4,8 +4,8 @@ import type { Core, Task } from "../lib/types";
 /** A written summary rather than more numbers. The Core already shows the gauges; repeating them
  *  in prose would be decoration. This says what to do about them. */
 export function BriefingPanel({
-  core, tasks, style,
-}: { core: Core | null; tasks: Task[]; style?: React.CSSProperties }) {
+  core, tasks,
+}: { core: Core | null; tasks: Task[] }) {
   const now = new Date();
   const date = now.toLocaleDateString(undefined, {
     weekday: "long", day: "numeric", month: "long",
@@ -30,7 +30,7 @@ export function BriefingPanel({
   const top = next.length > 0 ? next : tasks.slice(0, 3);
 
   return (
-    <Panel title="Daily Briefing" sub={date} style={style}>
+    <Panel title="Daily Briefing" sub={date}>
       <p style={{ margin: "0 0 12px", lineHeight: 1.7, color: "var(--text)" }}>{line}</p>
       {top.length > 0 && (
         <>

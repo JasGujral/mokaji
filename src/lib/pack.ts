@@ -59,3 +59,32 @@ export function columnsFor(width: number): number {
   if (width >= 820) return 6;
   return 3;
 }
+
+/** One grid row's height in pixels. The handoff's tiles are wider than tall at the same cell
+ *  count, so rows are deliberately smaller than columns. */
+export const ROW_H = 34;
+export const GAP = 14;
+
+export interface Box { id: string; left: number; top: number; width: number; height: number; }
+
+/** Grid units to pixels.
+ *
+ *  The Deck positions tiles **absolutely** rather than with CSS grid, which is not a stylistic
+ *  choice: `left`/`top`/`width`/`height` are animatable, so a reflow glides instead of snapping,
+ *  and a tile being dragged can leave the flow without the rest of the layout collapsing. */
+export function boxes(placed: Placed[], cols: number, containerW: number): Box[] {
+  const colW = (containerW - GAP * (cols + 1)) / cols;
+  return placed.map((p) => ({
+    id: p.id,
+    left: GAP + (p.col - 1) * (colW + GAP),
+    top: GAP + (p.row - 1) * (ROW_H + GAP),
+    width: p.w * colW + (p.w - 1) * GAP,
+    height: p.h * ROW_H + (p.h - 1) * GAP,
+  }));
+}
+
+/** Total height the deck needs, so the scroll container is the right size. */
+export function deckHeight(placed: Placed[]): number {
+  const rows = placed.reduce((m, p) => Math.max(m, p.row - 1 + p.h), 0);
+  return GAP + rows * (ROW_H + GAP);
+}

@@ -4,9 +4,9 @@ import { Panel } from "../components/Panel";
  *
  *  An empty panel that explains itself is honest; one that silently shows nothing is
  *  indistinguishable from a broken connector, and teaches you to distrust the whole Deck. */
-export function AgendaPanel({ style }: { style?: React.CSSProperties }) {
+export function AgendaPanel({}: Record<string, never>) {
   return (
-    <Panel title="Today's Agenda" sub="no calendar connector" style={style}>
+    <Panel title="Today's Agenda" sub="no calendar connector">
       <div className="empty">
         No calendar is connected yet — that arrives at <strong>M-5</strong>, with Google Calendar
         and local <code>.ics</code> behind one Event model.

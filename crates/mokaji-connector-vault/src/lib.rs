@@ -4,13 +4,15 @@
 //! trait every other source will, so the core stays empty and the vault has no privileged path
 //! into it.
 //!
-//! **B-4: writes are dry-run by default and not implemented yet at all.** This connector is
-//! read-only until the write-back path lands with its hash guard (B-3) and session snapshot (B-5).
-//! Declaring `Write` capability before that exists would be a lie the router would act on.
+//! **B-4: writes are dry-run by default.** [`write::VaultWriter`] prints diffs and applies
+//! nothing until it is explicitly armed. The `Connector` still declares Read-only capabilities:
+//! the write path is exercised directly by the Console and the voice loop, and it will be declared
+//! through the trait once `apply` is wired to `Mutation` (A-8).
 
 #![forbid(unsafe_code)]
 
 pub mod parse;
+pub mod write;
 
 use mokaji_core::connector::{
     Capability, Connector, Health, ProviderQuery, RawPayload, StandardQuery,
