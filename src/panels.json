@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "_note": "C-6/C-7: the Deck renders from this manifest, not from hard-coded components. Adding a panel post-v1 is an entry here plus a renderer, never a change to the Deck. Life/Work modes become decks.json layout profiles rather than code paths.",
+  "panels": {
+    "core": {
+      "name": "Reactor Core",
+      "group": "Focus",
+      "type": "core",
+      "query": { "kind": "core" },
+      "grid_data": { "w": 4, "h": 7, "min_w": 3 },
+      "refresh": { "mode": "poll", "fallback_secs": 60 }
+    },
+    "focus": {
+      "name": "Daily Briefing",
+      "group": "Focus",
+      "type": "briefing",
+      "query": { "kind": "core" },
+      "grid_data": { "w": 4, "h": 7, "min_w": 3 },
+      "refresh": { "mode": "poll", "fallback_secs": 60 }
+    },
+    "console": {
+      "name": "Command Console",
+      "group": "Focus",
+      "type": "console",
+      "grid_data": { "w": 4, "h": 7, "min_w": 3 },
+      "refresh": { "mode": "none" }
+    },
+    "tasks": {
+      "name": "Task Queue",
+      "group": "Plan",
+      "type": "tasks",
+      "query": { "kind": "task" },
+      "grid_data": { "w": 6, "h": 9, "min_w": 3 },
+      "refresh": { "mode": "poll", "fallback_secs": 60 }
+    },
+    "agenda": {
+      "name": "Today's Agenda",
+      "group": "Plan",
+      "type": "agenda",
+      "query": { "kind": "event", "window": "today" },
+      "grid_data": { "w": 6, "h": 9, "min_w": 3 },
+      "refresh": { "mode": "poll", "fallback_secs": 300 }
+    }
+  },
+  "decks": [
+    {
+      "id": "life",
+      "name": "Life",
+      "_note": "DEC-1: five panels in v1. The other eight from the design handoff are manifest entries post-v1, not deleted (X-7).",
+      "panels": ["core", "focus", "tasks", "agenda", "console"]
+    }
+  ]
+}

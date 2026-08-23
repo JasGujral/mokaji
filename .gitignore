@@ -13,6 +13,11 @@ dist-ssr/
 # ---- Tauri ----
 src-tauri/target/
 src-tauri/gen/
+# Platform icons are generated from src-tauri/icons/icon.png by `tauri icon`. The .png is source;
+# the .icns/.ico/@2x set is build output, and committing binaries that a command regenerates is
+# how they drift from the source they claim to come from.
+src-tauri/icons/*
+!src-tauri/icons/icon.png
 
 # ---- macOS ----
 .DS_Store

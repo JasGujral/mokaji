@@ -1,0 +1,52 @@
+/* Design tokens — ported from the design handoff, which is the source of truth for look.
+ *
+ * Colour is OKLCH and themeable by a single `--hue`. Accents offered by the handoff:
+ * 155 green (default), 195 cyan, 240 ion blue, 70 amber, 330 magenta.
+ *
+ * Semantic rule, and it is the whole colour system: GREEN = nominal, ORANGE = warning,
+ * GREY = unimportant. Nothing else earns a colour. A HUD that colours everything tells you
+ * nothing. */
+
+:root {
+  --hue: 155;
+
+  --neon:        oklch(0.88 0.19 var(--hue));
+  --neon-soft:   oklch(0.80 0.14 var(--hue));
+  --neon-dim:    oklch(0.62 0.09 var(--hue));
+  --warn:        oklch(0.78 0.16 55);
+  --warn-dim:    oklch(0.66 0.12 55);
+
+  --text:        oklch(0.95 0.012 200);
+  --muted:       oklch(0.60 0.012 210);
+  --muted-2:     oklch(0.46 0.012 215);
+
+  --bg-0:        oklch(0.17 0.02 235);
+  --bg-1:        oklch(0.115 0.018 235);
+  --bg-2:        oklch(0.08 0.015 235);
+
+  --panel-1:     oklch(0.26 0.03 235 / 0.40);
+  --panel-2:     oklch(0.13 0.02 235 / 0.34);
+  --hair:        oklch(0.78 0.12 var(--hue) / 0.16);
+  --hair-strong: oklch(0.78 0.12 var(--hue) / 0.34);
+
+  --gap: 14px;
+  --pad: 14px;
+  --radius: 6px;
+  --radius-sm: 4px;
+
+  --glow: 1;
+  --reflow: 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+
+  --font-display: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* REL-7: honour the setting rather than assuming everyone enjoys motion. */
+@media (prefers-reduced-motion: reduce) {
+  :root { --reflow: 0s; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

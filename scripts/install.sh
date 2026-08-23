@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Build MOKaji and put it on this machine's PATH.
+# Build MOKaji and put it on this machine.
 #
-#   ./scripts/install.sh              build + install the CLI
-#   ./scripts/install.sh --app        also build and install the desktop app (macOS)
+#   ./scripts/install.sh              the CLI only
+#   ./scripts/install.sh --app        the CLI plus the desktop app (macOS)
 #
-# Installs to ~/.local/bin, which needs no sudo and no write access outside your home directory.
+# Installs the CLI to ~/.local/bin — no sudo, nothing written outside your home directory.
+#
+# PORTABILITY: macOS ships bash 3.2 — no `mapfile`, no associative arrays, and empty-array
+# expansion errors under `set -u`. Keep this script to POSIX-ish constructs.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -30,28 +33,47 @@ esac
 
 if [ "$WITH_APP" = "1" ]; then
   if [ "$(uname -s)" != "Darwin" ]; then
-    echo "==> --app is macOS-only; skipping" >&2
+    echo "==> --app is macOS-only; skipping the bundle" >&2
   else
-    echo "==> building the desktop app (this takes a while the first time)"
-    npm install
+    echo "==> installing frontend dependencies"
+    npm install --no-audit --no-fund
+
+    # Tauri bundles a .icns on macOS and only ships a .png in the repo, because generated icon
+    # binaries are build output rather than source. Regenerate them from the one source icon.
+    if [ ! -f src-tauri/icons/icon.icns ]; then
+      echo "==> generating platform icons from src-tauri/icons/icon.png"
+      npx --yes @tauri-apps/cli icon src-tauri/icons/icon.png
+    fi
+
+    echo "==> building the desktop app (first run compiles the whole Tauri tree — expect minutes)"
     npm run tauri build
-    APP=$(find src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)
+
+    APP=""
+    for candidate in \
+      src-tauri/target/release/bundle/macos/*.app \
+      src-tauri/target/*/release/bundle/macos/*.app; do
+      [ -d "$candidate" ] && APP="$candidate" && break
+    done
+
     if [ -n "$APP" ]; then
       rm -rf "/Applications/$(basename "$APP")"
       cp -R "$APP" /Applications/
       echo "==> installed /Applications/$(basename "$APP")"
+      echo "    open it with:  open -a MOKaji"
     else
-      echo "==> no .app produced — check the tauri build output" >&2
+      echo "==> no .app was produced — check the tauri build output above" >&2
+      exit 1
     fi
   fi
 fi
 
 echo
-echo "Try it:"
-echo "    mokaji --vault <path-to-your-vault>"
-echo "    mokaji tasks    --vault <path>"
-echo "    mokaji chasers  --vault <path>"
-echo "    mokaji health   --vault <path>"
+echo "The CLI:"
+echo "    mokaji            Reactor Core readout"
+echo "    mokaji tasks      open tasks, in the Deck's order"
+echo "    mokaji chasers    waiting-on and need-to-nudge"
+echo "    mokaji vitals     today's tracker metrics"
+echo "    mokaji health     connector health"
 echo
-echo "Set MOKAJI_VAULT_PATH in ~/.zshrc to drop the --vault flag:"
+echo "Point both at your vault by putting this in ~/.zshrc:"
 echo "    export MOKAJI_VAULT_PATH=\"<path-to-your-vault>\""
