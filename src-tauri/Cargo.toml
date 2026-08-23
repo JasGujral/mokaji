@@ -22,6 +22,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 mokaji-core            = { path = "../crates/mokaji-core" }
 mokaji-connector-vault = { path = "../crates/mokaji-connector-vault" }
+mokaji-secrets         = { path = "../crates/mokaji-secrets" }
+mokaji-connector-ics   = { path = "../crates/mokaji-connector-ics" }
 tauri      = { version = "2", features = [] }
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"

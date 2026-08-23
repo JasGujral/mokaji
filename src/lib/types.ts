@@ -16,6 +16,9 @@ export interface Core {
   overdue: number;
   events: number;
   failures: Failure[];
+  /** False when no connector answered at all — "nothing to do" and "nothing was read" must never
+   *  look alike, and the arithmetic alone cannot tell them apart. */
+  has_data: boolean;
 }
 
 export interface Task {
@@ -30,6 +33,12 @@ export interface Task {
   source_ref: string;
 }
 
+export interface CalEvent {
+  id: string; title: string; start: string; end: string;
+  all_day: boolean; location: string | null; soon: boolean;
+  source: string; source_ref: string;
+}
+
 export interface Chaser {
   id: string; kind: string; what: string; since: string;
   overdue: boolean; source_ref: string;
@@ -37,7 +46,16 @@ export interface Chaser {
 
 export interface Metric { key: string; value: string; at: string; }
 export interface HealthRow { connector: string; state: string; detail: string | null; }
-export interface BootInfo { vault: string | null; version: string; milestone: string; }
+/** What a Console command would do, without doing it (B-4, CON-4). */
+export interface Preview {
+  kind: string;
+  describes: string;
+  mutating: boolean;
+  diff: string;
+  unmatched: boolean;
+}
+
+export interface BootInfo { vault: string | null; calendar: string | null; version: string; milestone: string; }
 
 /** One entry in `panels.json`. */
 export interface PanelSpec {

@@ -1,36 +1,32 @@
 import type { ReactNode } from "react";
 
-/** The glass shell every panel wears. Corner brackets come from CSS pseudo-elements, so a panel
- *  is one element and the Deck can move it without touching its contents. */
+/** Panel contents. The glass, brackets and title bar live on the Tile now — a panel that drew its
+ *  own frame inside another frame is the double-border look the prototype avoids. `sub` still
+ *  renders, because a panel's subtitle is about its data, not its chrome. */
 export function Panel({
-  title, sub, style, children,
+  title, sub, children,
 }: {
-  title: string;
+  title?: string;
   sub?: ReactNode;
-  style?: React.CSSProperties;
   children: ReactNode;
 }) {
   return (
-    <section className="panel" style={style} aria-label={title}>
-      <header>
-        <h3>{title}</h3>
-        {sub ? <span className="sub">{sub}</span> : null}
-      </header>
-      <div className="content">{children}</div>
-    </section>
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
+      {sub ? (
+        <div className="sub" style={{ color: "var(--muted-2)", fontSize: 10, marginBottom: 8 }}>
+          {sub}
+        </div>
+      ) : null}
+      <div style={{ flex: 1, minHeight: 0 }} aria-label={title}>{children}</div>
+    </div>
   );
 }
 
 export function Bar({ pct, warn }: { pct: number; warn?: boolean }) {
   const clamped = Math.max(0, Math.min(100, pct));
   return (
-    <div
-      className={warn ? "bar warn" : "bar"}
-      role="meter"
-      aria-valuenow={clamped}
-      aria-valuemin={0}
-      aria-valuemax={100}
-    >
+    <div className={warn ? "bar warn" : "bar"} role="meter"
+         aria-valuenow={clamped} aria-valuemin={0} aria-valuemax={100}>
       <i style={{ width: `${clamped}%` }} />
     </div>
   );

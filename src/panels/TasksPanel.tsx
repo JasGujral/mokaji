@@ -4,9 +4,9 @@ import type { Task } from "../lib/types";
 /** The queue, in the router's deterministic order (A-5): due ascending, nulls last, then text.
  *  Every row carries its `source_ref`, because a task you cannot trace back to a line in a file is
  *  a task you cannot trust. */
-export function TasksPanel({ tasks, style }: { tasks: Task[]; style?: React.CSSProperties }) {
+export function TasksPanel({ tasks }: { tasks: Task[] }) {
   return (
-    <Panel title="Task Queue" sub={`${tasks.length} open`} style={style}>
+    <Panel title="Task Queue" sub={`${tasks.length} open`}>
       {tasks.length === 0 ? (
         <div className="empty">
           Nothing open. Either the queue is clear, or the vault has no <code>- [ ]</code> lines in

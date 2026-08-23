@@ -26,6 +26,7 @@
 
 pub mod connector;
 pub mod error;
+pub mod intent;
 pub mod metrics;
 pub mod model;
 pub mod provider;

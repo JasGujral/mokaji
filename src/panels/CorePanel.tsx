@@ -3,11 +3,34 @@ import { Ring } from "../components/Ring";
 import type { Core } from "../lib/types";
 
 /** The signature instrument. Philosophy from the handoff: **it reads you, not the machine.** */
-export function CorePanel({ core, style }: { core: Core | null; style?: React.CSSProperties }) {
-  if (!core) return <Panel title="Reactor Core" style={style}><div className="empty">reading…</div></Panel>;
+export function CorePanel({ core }: { core: Core | null }) {
+  if (!core) return <Panel title="Reactor Core"><div className="empty">reading…</div></Panel>;
+
+  // "Nothing to do" and "nothing was read" produce identical arithmetic — an empty task list is
+  // 100% momentum by the formula, which is correct for the first and a lie for the second. Refuse
+  // to show a reading at all rather than show the healthiest possible one over no data.
+  if (!core.has_data) {
+    return (
+      <Panel title="Reactor Core" sub="no reading">
+        <div className="empty">
+          <span className="badge">NO DATA</span>
+          <p style={{ lineHeight: 1.7 }}>
+            Nothing answered, so there is no readout. An empty vault and an unreachable one look
+            the same to the arithmetic — both give 100% — so no number is shown rather than the
+            most flattering one.
+          </p>
+          {core.failures.map((f) => (
+            <div key={f.connector} style={{ color: "var(--warn)" }}>
+              {f.connector}: {f.reason}
+            </div>
+          ))}
+        </div>
+      </Panel>
+    );
+  }
 
   return (
-    <Panel title="Reactor Core" sub={`${core.open} open`} style={style}>
+    <Panel title="Reactor Core" sub={`${core.open} open`}>
       <Ring pct={core.readiness} label="Readiness" state={core.state} />
       <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
         <div>

@@ -59,7 +59,7 @@ fn main() -> std::process::ExitCode {
         }
     }
 
-    let Some(vault) = vault_arg.or_else(discover_vault) else {
+    let Some(vault) = vault_arg.or_else(mokaji_connector_vault::discover::discover) else {
         eprintln!(
             "Could not find a vault.\n\n\
              Pass one with `mokaji --vault <PATH>`, or set MOKAJI_VAULT_PATH.\n\
@@ -70,37 +70,6 @@ fn main() -> std::process::ExitCode {
 
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
     rt.block_on(run(&command, &vault))
-}
-
-/// H-3: an empty config must still boot against a discovered vault. Walk up from the current
-/// directory, checking each ancestor and its children for the marker folder.
-fn discover_vault() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("MOKAJI_VAULT_PATH") {
-        let p = PathBuf::from(p);
-        if is_vault(&p) {
-            return Some(p);
-        }
-    }
-    let cwd = std::env::current_dir().ok()?;
-    for dir in cwd.ancestors() {
-        if is_vault(dir) {
-            return Some(dir.to_path_buf());
-        }
-        let mut children: Vec<PathBuf> = std::fs::read_dir(dir)
-            .ok()?
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.is_dir())
-            .collect();
-        children.sort();
-        if let Some(found) = children.into_iter().find(|c| is_vault(c)) {
-            return Some(found);
-        }
-    }
-    None
-}
-
-fn is_vault(p: &Path) -> bool {
-    p.join("08 Journal/Daily").is_dir()
 }
 
 async fn run(command: &str, vault: &Path) -> std::process::ExitCode {
@@ -179,6 +148,41 @@ async fn run(command: &str, vault: &Path) -> std::process::ExitCode {
                 println!("             ↳ {}", t.source_ref);
             }
             println!("\n  {n} open\n");
+        }
+        "agenda" => {
+            let cal = mokaji_connector_vault::discover::remembered_calendar();
+            let Some(cal) = cal else {
+                println!("\n  no calendar folder set — point MOKaji at a folder of .ics files:");
+                println!("      mkdir -p ~/.config/mokaji && echo /path/to/ics > ~/.config/mokaji/calendar\n");
+                return std::process::ExitCode::SUCCESS;
+            };
+            let cals: Vec<Arc<dyn Connector>> =
+                vec![Arc::new(mokaji_connector_ics::IcsConnector::new(&cal))];
+            let out = router
+                .resolve(
+                    &cals,
+                    &StandardQuery {
+                        kind: Kind::Event,
+                        window: Some("today".into()),
+                        params: serde_json::Map::new(),
+                    },
+                )
+                .await;
+            for r in &out.records {
+                let AnyRecord::Event(e) = r else { continue };
+                let when = if e.data.all_day {
+                    "all day".to_string()
+                } else {
+                    e.data
+                        .start
+                        .with_timezone(&chrono::Local)
+                        .format("%H:%M")
+                        .to_string()
+                };
+                println!("  {when:>7}  {}", e.data.title);
+                println!("           ↳ {}", e.source_ref);
+            }
+            println!("\n  {} event(s) · {}\n", out.records.len(), cal.display());
         }
         "chasers" => {
             let out = router.resolve(&connectors, &q(Kind::Chaser)).await;

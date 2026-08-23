@@ -35,6 +35,7 @@
   --radius-sm: 4px;
 
   --glow: 1;
+  --grid-alpha: 0.05;
   --reflow: 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 
   --font-display: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;

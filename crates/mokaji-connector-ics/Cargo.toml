@@ -1,6 +1,6 @@
 [package]
-name        = "mokaji-connector-vault"
-description = "Reads an Obsidian vault. Connector #1 — not a special case, just the first one."
+name        = "mokaji-connector-ics"
+description = "Reads iCalendar (.ics) files. The calendar connector that needs no credentials."
 version.workspace      = true
 edition.workspace      = true
 license.workspace      = true
@@ -12,7 +12,6 @@ mokaji-core = { path = "../mokaji-core" }
 async-trait = { workspace = true }
 chrono      = { workspace = true }
 serde_json  = { workspace = true }
-thiserror   = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
