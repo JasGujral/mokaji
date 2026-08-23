@@ -411,3 +411,53 @@ a.src:hover { color: var(--neon-soft); }
   border: 1px solid var(--hair-strong);
 }
 .settings .chip:hover { border-color: var(--neon-dim); color: var(--neon); }
+
+/* ============================================================== the briefing */
+
+.brief { display: flex; flex-direction: column; gap: 11px; }
+.brief-line { display: grid; grid-template-columns: 66px 1fr auto; gap: 10px; align-items: baseline; }
+.brief-sec {
+  font-family: var(--font-display); font-size: 9px; letter-spacing: .2em;
+  text-transform: uppercase; color: var(--muted-2); padding-top: 2px;
+}
+.brief-txt { color: var(--text); line-height: 1.65; }
+/* The citation count is a button, not a footnote marker: E-8 only means something if "why did it
+ * say that?" is one click rather than a thing you take on trust. */
+.brief-cite {
+  font-family: var(--font-mono); font-size: 9px; cursor: pointer;
+  min-width: 18px; height: 18px; border-radius: 999px; padding: 0 5px;
+  background: transparent; color: var(--neon-soft); border: 1px solid var(--hair-strong);
+}
+.brief-cite:hover { border-color: var(--neon-dim); color: var(--neon); }
+.brief-refs {
+  grid-column: 2 / -1; margin: 4px 0 0; padding: 8px 10px; list-style: none;
+  border-left: 1px solid var(--hair-strong); font-family: var(--font-mono); font-size: 10px;
+  color: var(--muted); display: flex; flex-direction: column; gap: 4px;
+}
+.brief-refs .src { color: var(--neon-soft); }
+
+.brief-foot {
+  display: flex; align-items: center; gap: 12px; margin-top: 16px;
+  padding-top: 12px; border-top: 1px solid var(--hair); font-size: 10px;
+  letter-spacing: .14em; text-transform: uppercase; font-family: var(--font-display);
+  color: var(--muted-2); flex-wrap: wrap;
+}
+.brief-foot .btn.live { border-color: var(--neon); color: var(--neon); }
+.brief-fail {
+  margin-top: 10px; font-size: 10px; color: var(--warn, oklch(.84 .15 75));
+  font-family: var(--font-mono); line-height: 1.6;
+}
+
+/* An account is a card rather than another row of fields: two mailboxes that look alike are two
+ * mailboxes you will eventually put the wrong password into. */
+.settings .acct {
+  border: 1px solid var(--hair); border-radius: var(--radius-sm);
+  padding: 12px 14px; margin: 10px 0; background: oklch(0.11 0.02 235 / 0.4);
+}
+.settings .acct-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  margin-bottom: 8px; font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
+  font-family: var(--font-display);
+}
+.settings .acct-head b { color: var(--text); letter-spacing: .16em; }
+.settings .muted { color: var(--muted-2); }

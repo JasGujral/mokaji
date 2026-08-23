@@ -14,6 +14,13 @@ chrono    = { workspace = true }
 # pre-commit hook both assert that. rustls rather than OpenSSL so the TLS stack is one we can
 # reason about; no default features so nothing arrives uninvited.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# The IMAP socket. Mail is the third sense and IMAP is not HTTP, so the raw TLS stream has to live
+# somewhere — and the only honest somewhere is here. Putting it in the mail connector instead would
+# mean a second crate naming a socket library, which is precisely what PRIV-5 forbids.
+tokio        = { workspace = true, features = ["net", "io-util", "time"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls       = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

@@ -91,4 +91,37 @@ export type Action =
   | { kind: "open"; query: string }
   | { kind: "window"; on: boolean }
   | { kind: "ui"; name: string }
+  | { kind: "brief" }
+  | { kind: "hush" }
   | { kind: "unmatched"; text: string };
+
+/** A pointer from a briefing claim back to the record that makes it true (E-8). */
+export interface Citation { record_id: string; source: string; source_ref: string; }
+
+/** One statement in the briefing, and its evidence. */
+export interface BriefingLine { section: string; text: string; citations: Citation[]; }
+
+/** The morning briefing. Assembled locally from records with no model involved — E-2 pins the
+ *  daily loop off the network, and the strongest way to keep it there is to need nothing that
+ *  could be off the network. */
+export interface Briefing {
+  greeting: string;
+  lines: BriefingLine[];
+  spoken: string;
+  sources: string[];
+  /** M-5's exit criterion, answered directly rather than implied. */
+  three_connector: boolean;
+  failures: { connector: string; reason: string }[];
+}
+
+/** One configured mailbox. `has_password` is a boolean because PRIV-4 means the renderer learns
+ *  that a credential exists and nothing more. */
+export interface MailAccount {
+  slot: "work" | "personal";
+  address: string;
+  host: string;
+  port: number;
+  mailbox: string;
+  enabled: boolean;
+  has_password: boolean;
+}

@@ -551,7 +551,7 @@ dependencies = [
 
 [[package]]
 name = "mokaji-cli"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "chrono",
  "mokaji-connector-ics",
@@ -563,7 +563,7 @@ dependencies = [
 
 [[package]]
 name = "mokaji-connector-ics"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "async-trait",
  "chrono",
@@ -573,8 +573,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mokaji-connector-mail"
+version = "0.0.5"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "mokaji-core",
+ "mokaji-net",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "mokaji-connector-vault"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "async-trait",
  "chrono",
@@ -586,7 +599,7 @@ dependencies = [
 
 [[package]]
 name = "mokaji-connectors-fake"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "async-trait",
  "chrono",
@@ -597,7 +610,7 @@ dependencies = [
 
 [[package]]
 name = "mokaji-core"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "async-trait",
  "chrono",
@@ -610,17 +623,20 @@ dependencies = [
 
 [[package]]
 name = "mokaji-net"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "chrono",
  "reqwest",
+ "rustls",
  "thiserror",
  "tokio",
+ "tokio-rustls",
+ "webpki-roots",
 ]
 
 [[package]]
 name = "mokaji-secrets"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "security-framework",
  "thiserror",

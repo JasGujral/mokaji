@@ -88,10 +88,28 @@ skyline bin-packer; **positions are computed, never stored**, which is what make
 panel ids rather than a saved pixel layout. Only *UI* state persists client-side (C-11) — the
 numbers always come from the vault.
 
-Two panels tell you what they cannot do rather than showing nothing: **Agenda** has no calendar
-until M-5, and the **Console** accepts input but will not write until the vault write path has its
-hash guard, dry-run default and session snapshot. An empty panel that explains itself is honest;
-one that silently shows nothing is indistinguishable from a broken connector.
+Panels tell you what they cannot do rather than showing nothing. An empty panel that explains
+itself is honest; one that silently shows nothing is indistinguishable from a broken connector —
+which is the same reason the Core shows **NO DATA** rather than the 100% OPTIMAL that correct
+arithmetic over zero records would otherwise produce.
+
+**⌥Space** opens the command bar from anywhere on the machine, whether or not MOKaji has focus;
+⌘K does the same inside the window. It parses as you type and states what it will do before it
+does it, which is the safety net a mis-transcription needs. Everything it can do, the Console can
+do, because both call the same parser in `mokaji-core` — CON-3 exists so a command cannot behave
+differently typed and spoken.
+
+```
+add a task to call the harbour office tomorrow
+done accountant                 open the tide survey
+brief me                        quiet
+show agenda                     hide the task queue panel
+hide                            come back
+```
+
+The **Daily Briefing** is assembled from every configured sense and reads itself out. Each line
+carries a count you can click to see the record ids behind it: a briefing whose claims cannot be
+traced is indistinguishable from a plausible invention, and tracing is the whole argument.
 
 ## The CLI
 
@@ -106,6 +124,22 @@ mokaji vitals               # today's tracker metrics
 mokaji health               # connector health
 ```
 
+### Senses
+
+| | What it needs | What it gives |
+|---|---|---|
+| **Vault** | a folder containing `08 Journal/Daily` | tasks, chasers, notes, metrics |
+| **Calendar** | a folder of `.ics` files — `~/Library/Calendars` is the one macOS already maintains for every account in Internet Accounts | events, with A-4 collapsing the same meeting arriving from two calendars |
+| **Mail** | an IMAP app password per mailbox, in the Keychain | messages, **read and classify only** |
+
+Mail opens the mailbox with `EXAMINE` rather than `SELECT` and fetches headers, never bodies. It
+cannot send, reply, archive, delete or mark anything read — B-9 written as an absence of code
+rather than a setting. Whether a message *needs action* is decided by structural signals (the
+server's `\Seen` flag, whether the sender is an unattended address, whether it is you) and never
+by the words in a subject line: those words are chosen by the sender, and the senders most fluent
+in urgency have the least claim on your attention. That is X-10's lesson, applied where it is
+easiest to forget.
+
 ```
   ⚛  REACTOR CORE — 64%  STEADY
 
@@ -116,7 +150,7 @@ mokaji health               # connector health
   Open tasks             4
   Urgent (due ≤ today)   1
   Chasers overdue        0
-  Calendar load          0%  (no calendar until M-5)
+  Calendar load          0%  (until a calendar folder is configured)
 ```
 
 *(Numbers above are from the invented test fixture, not from anyone's vault — see the hard rule
@@ -149,8 +183,8 @@ true. That single fact is what makes PRIV-1 — *audio never leaves the device* 
 property rather than a promise: the audio crate cannot acquire the ability to transmit without a
 visible dependency change that fails the build.
 
-Not yet present, added as their milestones start: `src-tauri/` and `src/` (M-0), the vault
-connector (M-1), `mokaji-audio` (M-2).
+`mokaji-audio` is the one crate still to come (M-3). It will have **no network dependency**, which
+is what makes "audio never leaves the device" a fact about the build rather than a promise.
 
 ## Milestones
 
@@ -158,10 +192,10 @@ connector (M-1), `mokaji-audio` (M-2).
 |---|---|---|
 | **M-0** | Contracts & skeleton | ✅ **exit criterion met** — two fake connectors round-trip through TET; router dedupes and sorts deterministically; PRIV-5 passes. **Nothing on screen — that is correct** |
 | **M-1** | Vault + Deck v0 | ✅ the app window — real vault numbers, panels from a manifest |
-| **M-2** | Voice v0 — push-to-talk | A spoken task lands in the daily note in < 5 s **with the network cable out** |
-| **M-3** | Voice v1 — always-on | Wake word → overlay ≤ 300 ms, idle CPU ≤ 2%, no non-commercial model shipped |
-| **M-4** | The brain | "Plan my day" returns a **cited** plan; the audit log shows byte-for-byte what left |
-| **M-5** | Senses | A three-connector morning briefing, spoken and not dismissed, ≥4 of 5 weekdays |
+| **M-2** | Voice v0 — push-to-talk | ✅ the command surface — ⌥Space anywhere, one parser for typed and spoken, a task lands in the daily note **with the network cable out**. Dictation itself waits on M-3's local engine; the field is the interim, and says so |
+| **M-3** | Voice v1 — always-on | ⏳ **blocked on hardware, not design.** Wake word ("Hey Kaji") → overlay ≤ 300 ms, idle CPU ≤ 2%, no non-commercial model shipped. The ring buffer, the wake-word model and local STT are CoreAudio/Metal builds that compile only on the target Mac |
+| **M-4** | The brain | Contracts done (`provider.rs`: tiers, policy, consent, citations, E-2 pinning). Needs a local runtime chosen and wired — "plan my day" returns a **cited** plan; the audit log shows byte-for-byte what left |
+| **M-5** | Senses | ✅ vault + calendar + mail, assembled into a briefing that cites every claim and reads itself out. Whether it is **not dismissed ≥4 of 5 weekdays** is a fact about use, not about code — the app reports which senses answered so the criterion can actually be judged |
 
 **Cut milestones from the end, never depth from M-0.**
 
@@ -231,8 +265,10 @@ milestones are done.
 |---|---|
 | `0.0.1` | M-0 — contracts, the outbound chokepoint, Keychain, the vault connector, the CLI |
 | `0.0.2` | M-1 — the app window |
-| `0.0.3` | M-2 — push-to-talk voice, fully offline |
-| `0.0.4` / `0.0.5` / `0.0.6` | M-3 / M-4 / M-5 |
+| `0.0.3` | the Console writes — confirm, apply, undo; the vault watcher |
+| `0.0.4` | M-2 — the command bar; ⌥Space, one parser, the Core as a summary |
+| `0.0.5` | M-5 — the third sense: mail over IMAP, and the briefing that cites itself |
+| `0.0.6` | M-3 / M-4 — the wake word and the local model, both of which need the target Mac |
 | **`0.1.0`** | **first release** |
 
 Everything before `0.1.0` is development. Expect breaking changes to the connector and panel

@@ -125,6 +125,25 @@ export function Voice({ open, onClose, handlers }: {
           setUndo({ id: applied.undo_id, left: applied.undo_seconds });
           return;
         }
+        case "brief": {
+          // M-5's exit criterion is a briefing *spoken and not dismissed*, so the voice path
+          // reads it rather than merely opening the panel. The panel opens too, because a
+          // briefing you can also see is one you can check afterwards.
+          const b = await api.briefing();
+          handlers.panel("briefing", true);
+          await api.speak(`${b.greeting} ${b.spoken}`);
+          setReply(
+            b.three_connector
+              ? `Reading ${b.lines.length} lines from ${b.sources.length} senses.`
+              : `Reading ${b.lines.length} lines — only ${b.sources.length} of 3 senses answered.`,
+          );
+          setTimeout(onClose, 900);
+          return;
+        }
+        case "hush":
+          await api.hush();
+          onClose();
+          return;
         case "unmatched":
           // CON-2: falling back to a model is a decision, and until M-4 wires the router in, the
           // honest answer is that nothing local matched. Guessing here is how a HUD earns distrust.

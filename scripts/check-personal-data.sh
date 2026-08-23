@@ -28,7 +28,7 @@ list_files() {
   elif git rev-parse --git-dir >/dev/null 2>&1; then
     git ls-files
   else
-    find . -type d \( -name .git -o -name target -o -name node_modules \) -prune -o -type f -print \
+    find . -type d \( -name .git -o -name target -o -name node_modules -o -name dist \) -prune -o -type f -print \
       | sed 's|^\./||'
   fi
 }

@@ -49,6 +49,13 @@ Run it once per clone, and again whenever the vault changes materially:
 | Google OAuth client id | Keychain (not secret, kept together) | `com.mokaji.oauth.google` | `client-id` |
 | Google OAuth client secret | macOS Keychain | `com.mokaji.oauth.google` | `client-secret` |
 | Google refresh token | macOS Keychain | `com.mokaji.oauth.google` | `refresh-token` |
+| Work mailbox app password | macOS Keychain | `com.mokaji.mail.work` | `app-password` |
+| Personal mailbox app password | macOS Keychain | `com.mokaji.mail.personal` | `app-password` |
+
+The two mailboxes get **two services rather than two accounts under one service**, so revoking
+work access is a single `delete` that cannot take personal with it. Mailbox addresses, hosts and
+folder names are not secrets and live in `~/.config/mokaji/mail.json`; that file has no field a
+password could be written into, and a test asserts it.
 | A-7 shim session secret | Generated per session, memory only | — | — |
 
 `.env.example` documents what configuration exists. There is no `.env` with real values — if you

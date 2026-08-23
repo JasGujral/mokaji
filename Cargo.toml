@@ -6,12 +6,13 @@ members = [
     "crates/mokaji-secrets",
     "crates/mokaji-connector-vault",
     "crates/mokaji-connector-ics",
+    "crates/mokaji-connector-mail",
     "crates/mokaji-cli",
     "crates/mokaji-connectors-fake",
 ]
 
 [workspace.package]
-version    = "0.0.4"
+version    = "0.0.5"
 edition    = "2021"
 license    = "Apache-2.0"
 publish    = false

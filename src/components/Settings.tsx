@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { BootInfo, HealthRow } from "../lib/types";
+import type { BootInfo, HealthRow, MailAccount } from "../lib/types";
 
 export interface Appearance {
   hue: number;
@@ -43,6 +43,10 @@ export function Settings({
   const [key, setKey] = useState("");
   const [keyMsg, setKeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [calSuggestions, setCalSuggestions] = useState<string[]>([]);
+  const [mail, setMail] = useState<MailAccount[]>([]);
+  const [mailMsg, setMailMsg] = useState<Record<string, { ok: boolean; text: string }>>({});
+  const [draft, setDraft] = useState<Record<string, { address: string; password: string }>>({});
+  const [netOn, setNetOn] = useState(true);
 
   useEffect(() => { setVault(boot?.vault ?? ""); }, [boot?.vault]);
   useEffect(() => { setCal(boot?.calendar ?? ""); }, [boot?.calendar]);
@@ -50,6 +54,8 @@ export function Settings({
     void api.health().then(setHealth).catch(() => setHealth([]));
     void api.secretStatus().then(setSecrets).catch(() => setSecrets({}));
     void api.suggestCalendars().then(setCalSuggestions).catch(() => setCalSuggestions([]));
+    void api.mailAccounts().then(setMail).catch(() => setMail([]));
+    void api.network().then((n) => setNetOn(n.allowed)).catch(() => setNetOn(true));
   }, [boot?.vault]);
 
   useEffect(() => {
@@ -96,6 +102,82 @@ export function Settings({
     setKeyMsg({ ok: true, text: "Removed from the Keychain." });
     setSecrets(await api.secretStatus());
   }
+
+  const slot = (name: "work" | "personal") => mail.find((m) => m.slot === name);
+  const d = (name: string) => draft[name] ?? { address: "", password: "" };
+  const edit = (name: string, patch: Partial<{ address: string; password: string }>) =>
+    setDraft((p) => ({ ...p, [name]: { ...d(name), ...patch } }));
+
+  async function saveMail(name: "work" | "personal") {
+    const cur = slot(name);
+    const address = (d(name).address || cur?.address || "").trim();
+    const password = d(name).password.trim();
+    if (!address) {
+      setMailMsg((m) => ({ ...m, [name]: { ok: false, text: "an address is required" } }));
+      return;
+    }
+    try {
+      await api.setMailAccount({ slot: name, address, password: password || undefined });
+      setDraft((p) => ({ ...p, [name]: { address: "", password: "" } }));
+      setMail(await api.mailAccounts());
+      setHealth(await api.health());
+      onVaultChanged();
+      setMailMsg((m) => ({
+        ...m,
+        [name]: {
+          ok: true,
+          text: password
+            ? "Saved. The app password went to the Keychain and will not be shown again."
+            : "Saved.",
+        },
+      }));
+    } catch (e) {
+      setMailMsg((m) => ({ ...m, [name]: { ok: false, text: String(e) } }));
+    }
+  }
+
+  async function forgetMail(name: "work" | "personal") {
+    await api.clearMailAccount(name).catch(() => {});
+    setMail(await api.mailAccounts());
+    setMailMsg((m) => ({ ...m, [name]: { ok: true, text: "Removed, Keychain item included." } }));
+    onVaultChanged();
+  }
+
+  const mailbox = (name: "work" | "personal", label: string) => {
+    const cur = slot(name);
+    const msg = mailMsg[name];
+    return (
+      <div className="acct" key={name}>
+        <div className="acct-head">
+          <b>{label}</b>
+          {cur ? (
+            <span className={cur.has_password ? "ok" : "bad"}>
+              {cur.has_password ? "app password set" : "no app password"}
+            </span>
+          ) : (
+            <span className="muted">not configured</span>
+          )}
+        </div>
+        <label htmlFor={`m-${name}-a`}>Address</label>
+        <input id={`m-${name}-a`} className="field" spellCheck={false}
+               placeholder={name === "work" ? "you@yourcompany.com" : "you@example.com"}
+               value={d(name).address || cur?.address || ""}
+               onChange={(e) => edit(name, { address: e.target.value })} />
+        <label htmlFor={`m-${name}-p`}>App password</label>
+        <input id={`m-${name}-p`} className="field" type="password" spellCheck={false}
+               autoComplete="new-password"
+               placeholder={cur?.has_password ? "•••• stored — type to replace" : "xxxx xxxx xxxx xxxx"}
+               value={d(name).password}
+               onChange={(e) => edit(name, { password: e.target.value })}
+               onKeyDown={(e) => { if (e.key === "Enter") void saveMail(name); }} />
+        <div className="row">
+          <button className="btn" onClick={() => void saveMail(name)}>Save</button>
+          {cur && <button className="btn" onClick={() => void forgetMail(name)}>Forget</button>}
+          {msg && <span className={msg.ok ? "ok" : "bad"}>{msg.text}</span>}
+        </div>
+      </div>
+    );
+  };
 
   const set = (patch: Partial<Appearance>) => onAppearance({ ...appearance, ...patch });
 
@@ -166,6 +248,37 @@ export function Settings({
           that fails review and CI.
         </p>
 
+        <h3>Mail</h3>
+        <p>
+          The third sense. <b>Read and classify only</b> — MOKaji cannot send, reply, archive,
+          delete or mark anything read, and it opens your mailbox with <code>EXAMINE</code> rather
+          than <code>SELECT</code>, so looking at your mail here leaves no trace in the client you
+          actually read it in. Headers only; no message body is ever fetched.
+        </p>
+        <p>
+          Use a <b>Google app password</b>, not your account password. Turn on 2-Step Verification,
+          then <b>myaccount.google.com → Security → App passwords</b>, and paste the sixteen
+          characters below — spaces and all, they get stripped. It goes straight to the macOS
+          Keychain under its own service name, so revoking one account cannot touch the other.
+        </p>
+        {mailbox("work", "Work")}
+        {mailbox("personal", "Personal")}
+
+        <h3>Network</h3>
+        <p>
+          One switch for everything outbound (PRIV-5). Cutting it costs you the mail line and
+          nothing else: the briefing is assembled from records by ordinary code with no model
+          involved, so it stays correct with the cable out.
+        </p>
+        <div className="row">
+          <button className="btn" onClick={() => void api.setNetwork(!netOn).then(setNetOn)}>
+            {netOn ? "Cut outbound traffic" : "Restore outbound traffic"}
+          </button>
+          <span className={netOn ? "ok" : "bad"}>
+            {netOn ? "outbound allowed" : "outbound cut"}
+          </span>
+        </div>
+
         <h3>Connectors</h3>
         {health.length === 0 ? (
           <p className="empty">nothing registered</p>
@@ -180,7 +293,8 @@ export function Settings({
           ))
         )}
         <p style={{ color: "var(--muted-2)" }}>
-          Calendar and email arrive at M-5, and will ask for their own credentials here.
+          Each connector reports its own health (A-6): an expired work password degrades the mail
+          rows, not the Deck.
         </p>
 
         <h3>Anthropic API key</h3>

@@ -61,6 +61,10 @@ export default function App() {
   const [err, setErr] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  /** Bumped on every refresh. Panels that fetch their own data (the briefing assembles four
+   *  queries Rust-side) watch this rather than being handed props, so a vault edit reaches them
+   *  through the same B-6 path as everything else. */
+  const [beat, setBeat] = useState(0);
 
   useEffect(() => {
     try { localStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch { /* private mode */ }
@@ -84,6 +88,7 @@ export default function App() {
         api.core(), api.tasks(), api.bootInfo(), api.agenda().catch(() => [] as CalEvent[]),
       ]);
       setCore(c); setTasks(t); setBoot(b); setEvents(ev); setErr(null);
+      setBeat((n) => n + 1);
     } catch (e) {
       setErr(String(e));
     }
@@ -173,7 +178,7 @@ export default function App() {
     if (!spec) return null;
     switch (spec.type) {
       case "core":     return <CorePanel core={core} events={events} />;
-      case "briefing": return <BriefingPanel core={core} tasks={tasks} />;
+      case "briefing": return <BriefingPanel tick={beat} />;
       case "tasks":    return <TasksPanel tasks={tasks} />;
       case "agenda":   return <AgendaPanel events={events} hasCalendar={Boolean(boot?.calendar)} />;
       case "console":  return <ConsolePanel onWrote={() => void refresh()} />;
