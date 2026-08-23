@@ -17,7 +17,7 @@ use mokaji_core::metrics::Readiness;
 use mokaji_core::model::{AnyRecord, Kind, MetricValue};
 use mokaji_core::router::Router;
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Where the vault is, resolved once at startup.
@@ -47,57 +47,9 @@ impl AppState {
     }
 }
 
-/// Where the chosen vault path is remembered between launches.
-///
-/// H-3 says an empty config must boot to a working app against a *discovered* vault. On macOS
-/// there is nothing to discover from a double-clicked app, so "discovery" has to include "what you
-/// told me last time".
-fn config_path() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME").map(PathBuf::from)?;
-    Some(home.join(".config/mokaji/vault"))
-}
-
-fn read_config_vault() -> Option<PathBuf> {
-    let p = std::fs::read_to_string(config_path()?).ok()?;
-    let p = PathBuf::from(p.trim());
-    is_vault(&p).then_some(p)
-}
-
-fn is_vault(p: &Path) -> bool {
-    !p.as_os_str().is_empty() && p.join("08 Journal/Daily").is_dir()
-}
-
-/// Find the vault: remembered choice, then environment, then the working directory.
-///
-/// The order matters. A GUI app gets no shell environment and starts at `/`, so for a
-/// double-clicked MOKaji only the first route can ever succeed — which is why it is first, and
-/// why [`set_vault`] exists at all.
-fn discover_vault() -> Option<PathBuf> {
-    if let Some(p) = read_config_vault() {
-        return Some(p);
-    }
-    if let Some(p) = std::env::var_os("MOKAJI_VAULT_PATH").map(PathBuf::from) {
-        if is_vault(&p) {
-            return Some(p);
-        }
-    }
-    let cwd = std::env::current_dir().ok()?;
-    for dir in cwd.ancestors() {
-        if is_vault(dir) {
-            return Some(dir.to_path_buf());
-        }
-        let mut children: Vec<PathBuf> = std::fs::read_dir(dir)
-            .ok()?
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.is_dir())
-            .collect();
-        children.sort();
-        if let Some(found) = children.into_iter().find(|c| is_vault(c)) {
-            return Some(found);
-        }
-    }
-    None
-}
+// Vault discovery lives in the connector crate, shared with the CLI and covered by workspace
+// tests. It was two implementations for one day, which was long enough for them to disagree.
+use mokaji_connector_vault::discover;
 
 /// The Reactor Core readout, plus the health badges that go with it (A-6).
 #[derive(Serialize)]
@@ -381,28 +333,10 @@ fn platform_store() -> Box<dyn mokaji_secrets::SecretStore> {
 /// If the path is not a vault, or the choice cannot be persisted.
 #[tauri::command]
 fn set_vault(state: tauri::State<'_, AppState>, path: String) -> Result<String, String> {
-    let p = PathBuf::from(shellexpand_home(path.trim()));
-    if !is_vault(&p) {
-        return Err(format!(
-            "{} does not look like a vault — expected a folder containing `08 Journal/Daily`",
-            p.display()
-        ));
-    }
-    let cfg = config_path().ok_or("cannot locate $HOME")?;
-    if let Some(dir) = cfg.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&cfg, p.display().to_string()).map_err(|e| e.to_string())?;
+    let p = discover::expand_home(path.trim());
+    discover::remember(&p)?;
     *state.vault.lock().map_err(|_| "vault lock poisoned")? = Some(p.clone());
     Ok(p.display().to_string())
-}
-
-/// `~` is what a person types; it is not a path.
-fn shellexpand_home(p: &str) -> String {
-    match (p.strip_prefix("~/"), std::env::var_os("HOME")) {
-        (Some(rest), Some(home)) => Path::new(&home).join(rest).display().to_string(),
-        _ => p.to_string(),
-    }
 }
 
 #[tauri::command]
@@ -508,7 +442,7 @@ async fn health(state: tauri::State<'_, AppState>) -> Result<Vec<HealthView>, St
 /// If Tauri cannot construct the window.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let vault = discover_vault();
+    let vault = discover::discover();
     // B-5's snapshot destination sits OUTSIDE the vault, so a snapshot never becomes a note.
     let snapshots = vault
         .as_ref()

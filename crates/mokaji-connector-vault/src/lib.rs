@@ -11,6 +11,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod discover;
 pub mod parse;
 pub mod write;
 
