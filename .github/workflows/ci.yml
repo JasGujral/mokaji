@@ -6,10 +6,14 @@ on:
   pull_request:
   workflow_dispatch:        # so CI can be re-run by hand without an empty commit
 
+# Least-privilege default: read-only workspace-wide; each job re-declares the minimum it needs.
+permissions:
+  contents: read
+
 # Cost control. This repo is public, so standard GitHub-hosted runners are free and unlimited —
 # but only on ubuntu. macOS runners bill at roughly 10x Linux, so do not casually add one: use a
-# macOS job only for things that genuinely cannot run elsewhere (Keychain, Metal, Tauri bundling),
-# and gate it behind a release or a manual dispatch rather than every push.
+# macOS job only for what genuinely cannot run elsewhere (Keychain, Metal, Tauri bundling), and
+# gate it behind a release or a manual dispatch rather than every push.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -20,12 +24,18 @@ env:
 jobs:
   rust:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      # Hash-pinned (OpenSSF Scorecard "Pinned-Dependencies"). A tag is mutable; a SHA is not.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # No third-party toolchain or cache action here on purpose. ubuntu-latest ships a current
+      # stable Rust with clippy and rustfmt, so installing one would add an unpinnable dependency
+      # to buy nothing. Build times for this workspace are a couple of minutes; caching can be
+      # revisited when that stops being true.
+      - name: toolchain
+        run: rustc --version && cargo --version && cargo clippy --version && cargo fmt --version
       - name: fmt
         run: cargo fmt --all --check
       - name: clippy
@@ -34,12 +44,15 @@ jobs:
         run: cargo test --workspace
 
   # PRIV-5 / PRIV-1, enforced structurally rather than by convention: only mokaji-net may depend
-  # on a networking crate. If this ever fails, someone has given another crate — possibly the
-  # audio crate — the ability to open a socket.
+  # on a networking crate. If this ever fails, another crate — possibly the audio crate — has been
+  # given the ability to open a socket.
   network-boundary:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: assert no crate but mokaji-net can reach the network
         run: |
           set -euo pipefail
@@ -57,31 +70,27 @@ jobs:
           done
           exit $fail
 
-  # PRIV-4: credentials live in the macOS Keychain, never in the tree. This is what makes that
-  # checkable rather than merely asserted. Mirrors .githooks/pre-commit, which catches it earlier.
+  # PRIV-4: credentials live in the macOS Keychain, never in the tree. Mirrors the pre-commit
+  # hook, which catches the same thing earlier.
   secrets:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0          # scan history, not just the tip
-      # The gitleaks *action* is free for public repos but asks organisations for a licence key.
-      # Running the pinned binary directly sidesteps that entirely and is reproducible.
-      - name: gitleaks
-        env:
-          GITLEAKS_VERSION: 8.28.0
-        run: |
-          set -euo pipefail
-          curl -sSLo /tmp/gitleaks.tar.gz \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
-          /tmp/gitleaks detect --config .gitleaks.toml --redact --verbose --exit-code 1
+          fetch-depth: 0        # a secret committed and later deleted is still published
+      - run: ./scripts/scan-secrets.sh
 
   # The repo is public and MOKaji reads one person's life. Nothing personal may land in a commit.
   personal-data:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: ./scripts/check-personal-data.sh
       # `.private-terms` is the vault-content denylist. It is the disclosure it exists to prevent,
       # so it must never be tracked — the pre-commit hook refuses it, and this is the backstop for

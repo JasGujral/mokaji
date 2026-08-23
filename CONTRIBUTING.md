@@ -25,7 +25,7 @@ word "synthetic" in their first five lines. `scripts/check-personal-data.sh` enf
 on every commit and every CI run.
 
 **2. No credentials, ever.** They live in the macOS Keychain — see `SECURITY.md`. There is no
-`.env` with real values; if you are creating one, that is the bug. `gitleaks` scans full history
+`.env` with real values; if you are creating one, that is the bug. `scripts/scan-secrets.sh` scans full history
 on every push.
 
 ## Design rules

@@ -196,7 +196,10 @@ Three layers keep that honest, rather than hoping:
 
 - `.githooks/pre-commit` — refuses credential-shaped filenames and contents, and refuses a
   networking dependency added outside `mokaji-net`. Install it with `./scripts/install-hooks.sh`
-- `gitleaks` in CI, over **full history**, not just the tip
+- `scripts/scan-secrets.sh` in CI, over **full history**, not just the tip — a secret committed
+  and later deleted is still published. In-repo rather than a downloaded binary: the previous
+  version pinned a gitleaks release tag that was a guess, and a wrong pin fails the build for a
+  reason unrelated to the code, which only teaches people to ignore red CI
 - the `network-boundary` CI job, which is what makes "audio never leaves the device" structural
   rather than aspirational
 
