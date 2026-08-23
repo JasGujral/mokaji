@@ -1,0 +1,29 @@
+[package]
+name        = "mokaji-desktop"
+description = "The Tauri shell. Owns the window; the renderer never touches a credential or a socket."
+version     = "0.0.1"
+edition     = "2021"
+license     = "Apache-2.0"
+publish     = false
+rust-version = "1.85"
+
+# Deliberately NOT a member of the root cargo workspace. Building this needs webkit/gtk system
+# libraries, and making every `cargo test` in CI pay for that would slow the loop that actually
+# catches bugs. The `network-boundary` CI job still inspects this manifest by name.
+[workspace]
+
+[lib]
+name       = "mokaji_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+mokaji-core            = { path = "../crates/mokaji-core" }
+mokaji-connector-vault = { path = "../crates/mokaji-connector-vault" }
+tauri      = { version = "2", features = [] }
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono     = { version = "0.4", features = ["serde"] }
+tokio      = { version = "1", features = ["rt-multi-thread"] }
