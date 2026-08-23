@@ -1,0 +1,22 @@
+[package]
+name        = "mokaji-net"
+description = "The single outbound HTTP chokepoint (PRIV-5). Nothing else in the workspace may open a socket."
+version.workspace      = true
+edition.workspace      = true
+license.workspace      = true
+publish.workspace      = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+chrono    = { workspace = true }
+# The ONLY networking dependency in the workspace. The `network-boundary` CI job and the
+# pre-commit hook both assert that. rustls rather than OpenSSL so the TLS stack is one we can
+# reason about; no default features so nothing arrives uninvited.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[lints.rust]
+missing_docs = "warn"

@@ -1,0 +1,19 @@
+[package]
+name        = "mokaji-secrets"
+description = "Credential storage. On macOS that is the Keychain, Rust-side only — the renderer never sees a token (PRIV-4)."
+version.workspace      = true
+edition.workspace      = true
+license.workspace      = true
+publish.workspace      = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+
+# Only pulled in on the target platform, so ubuntu CI still compiles the crate (and its trait,
+# constants and test double) without an Apple framework in sight.
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "2"
+
+[lints.rust]
+missing_docs = "warn"

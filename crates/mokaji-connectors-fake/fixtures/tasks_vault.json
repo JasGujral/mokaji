@@ -1,0 +1,31 @@
+{
+  "_note": "synthetic test data — invented lighthouse-station scenario. No real person, event or task appears in this repo, ever.",
+  "_dialect": "vault-ish: markdown checkbox lines already parsed, `due` as RFC3339 or null",
+  "tasks": [
+    {
+      "ref": "notes/daily/2026-08-24.md#L12",
+      "text": "Calibrate the lamp rotation",
+      "done": false,
+      "due": "2026-08-24T17:00:00Z"
+    },
+    {
+      "ref": "notes/daily/2026-08-24.md#L13",
+      "text": "Log the tide readings",
+      "done": false,
+      "due": null
+    },
+    {
+      "ref": "notes/daily/2026-08-24.md#L14",
+      "text": "Order lamp oil",
+      "done": false,
+      "due": "2026-08-23T09:00:00Z"
+    },
+    {
+      "ref": "notes/station/upkeep.md#L4",
+      "text": "calibrate   the LAMP rotation!!",
+      "done": false,
+      "due": "2026-08-24T17:00:00Z",
+      "note": "same task as the first one, spelled differently — must collapse (A-4)"
+    }
+  ]
+}

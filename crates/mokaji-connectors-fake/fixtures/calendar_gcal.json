@@ -1,0 +1,24 @@
+{
+  "_note": "synthetic test data — invented lighthouse-station scenario. No real person, event or task appears in this repo, ever.",
+  "_dialect": "google-calendar-ish: `summary`, RFC3339 `start`/`end`, `attendees[].email`",
+  "items": [
+    {
+      "id": "evt-1",
+      "summary": "Watch handover",
+      "start": "2026-08-24T09:00:00Z",
+      "end": "2026-08-24T09:15:00Z",
+      "location": "Lamp room",
+      "attendees": [{ "email": "keeper@example.com", "displayName": "Relief Keeper" }],
+      "responseStatus": "accepted",
+      "etag": "\"gcal-etag-1\""
+    },
+    {
+      "id": "evt-2",
+      "summary": "Lens inspection",
+      "start": "2026-08-24T14:00:00Z",
+      "end": "2026-08-24T15:00:00Z",
+      "attendees": [],
+      "responseStatus": "needsAction"
+    }
+  ]
+}

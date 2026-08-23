@@ -1,0 +1,19 @@
+{
+  "_note": "synthetic test data — invented lighthouse-station scenario. No real person, event or task appears in this repo, ever.",
+  "_dialect": "ics-ish: `SUMMARY`, `DTSTART`/`DTEND`. The same handover as calendar_gcal.json, spelled differently on purpose (A-4).",
+  "VEVENT": [
+    {
+      "UID": "ics-9911",
+      "SUMMARY": "  Watch-Handover!  ",
+      "DTSTART": "2026-08-24T09:00:00Z",
+      "DTEND": "2026-08-24T09:15:00Z",
+      "LOCATION": "Lamp room"
+    },
+    {
+      "UID": "ics-9912",
+      "SUMMARY": "Supply boat",
+      "DTSTART": "2026-08-25T08:30:00Z",
+      "DTEND": "2026-08-25T09:00:00Z"
+    }
+  ]
+}
