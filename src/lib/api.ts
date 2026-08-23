@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { BootInfo, CalEvent, Chaser, Core, HealthRow, Metric, Preview, Task } from "./types";
+import type { Applied, BootInfo, CalEvent, Chaser, Core, HealthRow, Metric, Preview, Task } from "./types";
 
 /** Every path to data goes through a Tauri command. The renderer holds no credential, opens no
  *  socket, and never touches the filesystem — SEC-1's allow-list is the entire surface. */
@@ -13,6 +13,8 @@ export const api = {
   vitals: () => invoke<Metric[]>("vitals"),
   health: () => invoke<HealthRow[]>("health"),
   preview: (input: string) => invoke<Preview>("preview", { input }),
+  apply: (input: string) => invoke<Applied>("apply", { input }),
+  undoWrite: (undoId: string) => invoke<string>("undo_write", { undoId }),
   grammar: () => invoke<[string, string][]>("grammar"),
   setVault: (path: string) => invoke<string>("set_vault", { path }),
   setCalendar: (path: string) => invoke<string>("set_calendar", { path }),

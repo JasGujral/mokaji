@@ -55,6 +55,14 @@ export interface Preview {
   unmatched: boolean;
 }
 
+/** The result of actually applying a command. */
+export interface Applied {
+  path: string;
+  diff: string;
+  undo_id: string;
+  undo_seconds: number;
+}
+
 export interface BootInfo { vault: string | null; calendar: string | null; version: string; milestone: string; }
 
 /** One entry in `panels.json`. */
