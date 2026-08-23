@@ -38,7 +38,10 @@ while IFS= read -r f; do
   [ -f "$f" ] || continue
   case "$f" in
     LICENSE|NOTICE|scripts/check-personal-data.sh|scripts/scan-secrets.sh|.githooks/pre-commit|CONTRIBUTING.md) continue ;;
-    *.png|*.jpg|*.jpeg|*.gif|*.pdf|*.gguf|*.onnx|Cargo.lock) continue ;;
+    *.png|*.jpg|*.jpeg|*.gif|*.pdf|*.gguf|*.onnx|*.icns|*.ico) continue ;;
+    # Lockfile checksums are hex soup; every pattern here produces false positives on them, and a
+    # lockfile cannot carry personal data anyway — it is generated from crate names and hashes.
+    Cargo.lock|*/Cargo.lock|package-lock.json) continue ;;
   esac
   count=$((count + 1))
 

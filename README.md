@@ -71,16 +71,32 @@ docs/adr/                  architecture decision records
 ## Install
 
 ```sh
-./scripts/install.sh            # builds and puts `mokaji` on your PATH (~/.local/bin)
-./scripts/install.sh --app      # also builds the desktop app into /Applications (macOS, from M-1)
+./scripts/install-hooks.sh                      # once per clone — see the hard rule below
+./scripts/gen-private-terms.sh /path/to/vault   # arms the vault-content check
+./scripts/install.sh                            # the `mokaji` CLI, into ~/.local/bin
+./scripts/install.sh --app                      # …plus the desktop app, into /Applications (macOS)
 ```
 
-Set `MOKAJI_VAULT_PATH` in your shell profile and you can drop the `--vault` flag.
+Put `export MOKAJI_VAULT_PATH="<path-to-your-vault>"` in your shell profile and both the CLI and
+the app find it without being told.
 
-## Try it
+## The app
 
-There is no app window yet — that arrives with the Deck at M-1. What exists is a terminal readout,
-which is the fastest honest test of the data layer:
+`open -a MOKaji` — a bento Deck of glass panels over a dark field: Reactor Core, Daily Briefing,
+Task Queue, Agenda, Command Console. Panels are declared in `src/panels.json` and placed by a
+skyline bin-packer; **positions are computed, never stored**, which is what makes a deck a list of
+panel ids rather than a saved pixel layout. Only *UI* state persists client-side (C-11) — the
+numbers always come from the vault.
+
+Two panels tell you what they cannot do rather than showing nothing: **Agenda** has no calendar
+until M-5, and the **Console** accepts input but will not write until the vault write path has its
+hash guard, dry-run default and session snapshot. An empty panel that explains itself is honest;
+one that silently shows nothing is indistinguishable from a broken connector.
+
+## The CLI
+
+Still the fastest honest test of the data layer, and the debugging path when a panel disagrees
+with Obsidian:
 
 ```sh
 mokaji                      # Reactor Core readout
@@ -141,7 +157,7 @@ connector (M-1), `mokaji-audio` (M-2).
 | # | | Exit criterion (short) |
 |---|---|---|
 | **M-0** | Contracts & skeleton | ✅ **exit criterion met** — two fake connectors round-trip through TET; router dedupes and sorts deterministically; PRIV-5 passes. **Nothing on screen — that is correct** |
-| **M-1** | Vault + Deck v0 | 🟡 connector + metrics done and matching; Deck still to come |
+| **M-1** | Vault + Deck v0 | ✅ the app window — real vault numbers, panels from a manifest |
 | **M-2** | Voice v0 — push-to-talk | A spoken task lands in the daily note in < 5 s **with the network cable out** |
 | **M-3** | Voice v1 — always-on | Wake word → overlay ≤ 300 ms, idle CPU ≤ 2%, no non-commercial model shipped |
 | **M-4** | The brain | "Plan my day" returns a **cited** plan; the audit log shows byte-for-byte what left |
