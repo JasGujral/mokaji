@@ -1846,6 +1846,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mokaji-connector-ics"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "mokaji-core",
+ "serde_json",
+]
+
+[[package]]
 name = "mokaji-connector-vault"
 version = "0.0.1"
 dependencies = [
@@ -1874,6 +1884,7 @@ name = "mokaji-desktop"
 version = "0.0.1"
 dependencies = [
  "chrono",
+ "mokaji-connector-ics",
  "mokaji-connector-vault",
  "mokaji-core",
  "mokaji-secrets",

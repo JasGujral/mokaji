@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import manifestJson from "./panels.json";
 import { api, inTauri } from "./lib/api";
-import type { BootInfo, Core, PanelManifest, Task } from "./lib/types";
+import type { BootInfo, CalEvent, Core, PanelManifest, Task } from "./lib/types";
 import { Deck, type Size } from "./components/Deck";
 import { Palette } from "./components/Palette";
 import { TopBar } from "./components/TopBar";
@@ -54,6 +54,7 @@ export default function App() {
   const [ui, setUi] = useState<Ui>(loadUi);
   const [core, setCore] = useState<Core | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [events, setEvents] = useState<CalEvent[]>([]);
   const [boot, setBoot] = useState<BootInfo | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -76,8 +77,10 @@ export default function App() {
       return;
     }
     try {
-      const [c, t, b] = await Promise.all([api.core(), api.tasks(), api.bootInfo()]);
-      setCore(c); setTasks(t); setBoot(b); setErr(null);
+      const [c, t, b, ev] = await Promise.all([
+        api.core(), api.tasks(), api.bootInfo(), api.agenda().catch(() => [] as CalEvent[]),
+      ]);
+      setCore(c); setTasks(t); setBoot(b); setEvents(ev); setErr(null);
     } catch (e) {
       setErr(String(e));
     }
@@ -117,7 +120,7 @@ export default function App() {
       case "core":     return <CorePanel core={core} />;
       case "briefing": return <BriefingPanel core={core} tasks={tasks} />;
       case "tasks":    return <TasksPanel tasks={tasks} />;
-      case "agenda":   return <AgendaPanel />;
+      case "agenda":   return <AgendaPanel events={events} hasCalendar={Boolean(boot?.calendar)} />;
       case "console":  return <ConsolePanel />;
       // C-7: an unknown panel type is reported, never silently dropped — a typo in the manifest
       // must not look identical to a panel you forgot to enable.

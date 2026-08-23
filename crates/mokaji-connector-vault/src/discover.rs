@@ -19,10 +19,39 @@ pub fn is_vault(p: &Path) -> bool {
     !p.as_os_str().is_empty() && p.join("08 Journal/Daily").is_dir()
 }
 
-/// Where the remembered choice lives.
+/// Where the remembered vault choice lives.
 #[must_use]
 pub fn config_path() -> Option<PathBuf> {
     home().map(|h| h.join(".config/mokaji/vault"))
+}
+
+/// Where the remembered calendar folder lives.
+#[must_use]
+pub fn calendar_config_path() -> Option<PathBuf> {
+    home().map(|h| h.join(".config/mokaji/calendar"))
+}
+
+/// The folder of `.ics` files the user chose, if it still exists.
+#[must_use]
+pub fn remembered_calendar() -> Option<PathBuf> {
+    let text = std::fs::read_to_string(calendar_config_path()?).ok()?;
+    let p = PathBuf::from(text.trim());
+    p.is_dir().then_some(p)
+}
+
+/// Remember a calendar folder.
+///
+/// # Errors
+/// If the path is not a directory, or the file cannot be written.
+pub fn remember_calendar(p: &Path) -> Result<(), String> {
+    if !p.is_dir() {
+        return Err(format!("{} is not a folder", p.display()));
+    }
+    let cfg = calendar_config_path().ok_or("cannot locate $HOME")?;
+    if let Some(dir) = cfg.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&cfg, p.display().to_string()).map_err(|e| e.to_string())
 }
 
 fn home() -> Option<PathBuf> {

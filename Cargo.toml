@@ -5,6 +5,7 @@ members = [
     "crates/mokaji-net",
     "crates/mokaji-secrets",
     "crates/mokaji-connector-vault",
+    "crates/mokaji-connector-ics",
     "crates/mokaji-cli",
     "crates/mokaji-connectors-fake",
 ]

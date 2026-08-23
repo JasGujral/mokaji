@@ -9,6 +9,7 @@
 //! resolves fresh through the router. Only *UI* state (deck layout, panel sizes, prefs) persists
 //! client-side.
 
+use mokaji_connector_ics::IcsConnector;
 use mokaji_connector_vault::write::{CopySnapshot, Edit, VaultWriter};
 use mokaji_connector_vault::VaultConnector;
 use mokaji_core::connector::{Connector, Health, StandardQuery};
@@ -28,6 +29,10 @@ use std::sync::Arc;
 /// is worse than one that fails loudly.
 pub struct AppState {
     vault: std::sync::Mutex<Option<PathBuf>>,
+    /// A folder of `.ics` files. B-7's secondary path, promoted to first: it needs no OAuth
+    /// client, no app verification and no browser round-trip, so `calLoad` stops being
+    /// permanently zero without waiting on anyone's API console.
+    calendar: std::sync::Mutex<Option<PathBuf>>,
     /// **B-4: dry-run, and it stays that way in M-1/M-2.** The Console can show you exactly what a
     /// command would do; arming it is a separate decision that belongs with the voice loop's
     /// spoken confirmation and undo, not with a text box.
@@ -39,11 +44,19 @@ impl AppState {
         self.vault.lock().ok().and_then(|v| v.clone())
     }
 
+    fn calendar(&self) -> Option<PathBuf> {
+        self.calendar.lock().ok().and_then(|v| v.clone())
+    }
+
     fn connectors(&self) -> Vec<Arc<dyn Connector>> {
-        match self.vault() {
-            Some(v) => vec![Arc::new(VaultConnector::new(v))],
-            None => Vec::new(),
+        let mut out: Vec<Arc<dyn Connector>> = Vec::new();
+        if let Some(v) = self.vault() {
+            out.push(Arc::new(VaultConnector::new(v)));
         }
+        if let Some(c) = self.calendar() {
+            out.push(Arc::new(IcsConnector::new(c)));
+        }
+        out
     }
 }
 
@@ -139,9 +152,76 @@ pub struct Preview {
 #[derive(Serialize)]
 pub struct BootInfo {
     vault: Option<String>,
+    calendar: Option<String>,
     version: String,
     /// Milestone the running build corresponds to, so a screenshot is never ambiguous.
     milestone: String,
+}
+
+/// Today's events, in local-calendar-day terms (§5).
+fn today_events() -> StandardQuery {
+    StandardQuery {
+        kind: Kind::Event,
+        window: Some("today".into()),
+        params: serde_json::Map::new(),
+    }
+}
+
+/// An event, flattened for the renderer.
+#[derive(Serialize)]
+pub struct EventView {
+    id: String,
+    title: String,
+    start: String,
+    end: String,
+    all_day: bool,
+    location: Option<String>,
+    /// Starting within the next 90 minutes — the handoff's "soon" flag.
+    soon: bool,
+    source: String,
+    source_ref: String,
+}
+
+/// Today's agenda.
+#[tauri::command]
+async fn agenda(state: tauri::State<'_, AppState>) -> Result<Vec<EventView>, String> {
+    let out = Router::new()
+        .resolve(&state.connectors(), &today_events())
+        .await;
+    let now = chrono::Utc::now();
+    Ok(out
+        .records
+        .iter()
+        .filter_map(|r| match r {
+            AnyRecord::Event(e) => Some(EventView {
+                id: e.id.clone(),
+                title: e.data.title.clone(),
+                start: e.data.start.to_rfc3339(),
+                end: e.data.end.to_rfc3339(),
+                all_day: e.data.all_day,
+                location: e.data.location.clone(),
+                soon: e.data.start > now && e.data.start - now < chrono::Duration::minutes(90),
+                source: e.source.clone(),
+                source_ref: e.source_ref.clone(),
+            }),
+            _ => None,
+        })
+        .collect())
+}
+
+/// Point at a folder of `.ics` files.
+///
+/// # Errors
+/// If the path is not a folder, or the choice cannot be persisted.
+#[tauri::command]
+fn set_calendar(state: tauri::State<'_, AppState>, path: String) -> Result<String, String> {
+    let p = discover::expand_home(path.trim());
+    discover::remember_calendar(&p)?;
+    *state
+        .calendar
+        .lock()
+        .map_err(|_| "calendar lock poisoned")? = Some(p.clone());
+    Ok(p.display().to_string())
 }
 
 fn q(kind: Kind) -> StandardQuery {
@@ -213,6 +293,7 @@ fn grammar() -> Vec<(String, String)> {
 fn boot_info(state: tauri::State<'_, AppState>) -> BootInfo {
     BootInfo {
         vault: state.vault().map(|v| v.display().to_string()),
+        calendar: state.calendar().map(|v| v.display().to_string()),
         version: env!("CARGO_PKG_VERSION").to_string(),
         milestone: "M-1".to_string(),
     }
@@ -225,15 +306,18 @@ async fn core(state: tauri::State<'_, AppState>) -> Result<CoreView, String> {
     let router = Router::new();
     let tasks = router.resolve(&connectors, &q(Kind::Task)).await;
     let chasers = router.resolve(&connectors, &q(Kind::Chaser)).await;
+    let events = router.resolve(&connectors, &today_events()).await;
 
     let mut all = tasks.records.clone();
     all.extend(chasers.records.clone());
+    all.extend(events.records.clone());
     let r = Readiness::compute(&all, chrono::Local::now());
 
     let mut failures: Vec<FailureView> = tasks
         .failures
         .iter()
         .chain(chasers.failures.iter())
+        .chain(events.failures.iter())
         .map(|f| FailureView {
             connector: f.connector.clone(),
             reason: f.reason.clone(),
@@ -443,6 +527,7 @@ async fn health(state: tauri::State<'_, AppState>) -> Result<Vec<HealthView>, St
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let vault = discover::discover();
+    let calendar = discover::remembered_calendar();
     // B-5's snapshot destination sits OUTSIDE the vault, so a snapshot never becomes a note.
     let snapshots = vault
         .as_ref()
@@ -457,6 +542,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppState {
             vault: std::sync::Mutex::new(vault),
+            calendar: std::sync::Mutex::new(calendar),
             writer,
         })
         .invoke_handler(tauri::generate_handler![
@@ -469,6 +555,8 @@ pub fn run() {
             preview,
             grammar,
             set_vault,
+            set_calendar,
+            agenda,
             secret_status,
             set_secret,
             clear_secret

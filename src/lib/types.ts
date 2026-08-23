@@ -33,6 +33,12 @@ export interface Task {
   source_ref: string;
 }
 
+export interface CalEvent {
+  id: string; title: string; start: string; end: string;
+  all_day: boolean; location: string | null; soon: boolean;
+  source: string; source_ref: string;
+}
+
 export interface Chaser {
   id: string; kind: string; what: string; since: string;
   overdue: boolean; source_ref: string;
@@ -49,7 +55,7 @@ export interface Preview {
   unmatched: boolean;
 }
 
-export interface BootInfo { vault: string | null; version: string; milestone: string; }
+export interface BootInfo { vault: string | null; calendar: string | null; version: string; milestone: string; }
 
 /** One entry in `panels.json`. */
 export interface PanelSpec {

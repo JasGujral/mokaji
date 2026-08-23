@@ -36,12 +36,15 @@ export function Settings({
 }) {
   const [vault, setVault] = useState(boot?.vault ?? "");
   const [vaultMsg, setVaultMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [cal, setCal] = useState(boot?.calendar ?? "");
+  const [calMsg, setCalMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [health, setHealth] = useState<HealthRow[]>([]);
   const [secrets, setSecrets] = useState<Record<string, boolean>>({});
   const [key, setKey] = useState("");
   const [keyMsg, setKeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => { setVault(boot?.vault ?? ""); }, [boot?.vault]);
+  useEffect(() => { setCal(boot?.calendar ?? ""); }, [boot?.calendar]);
   useEffect(() => {
     void api.health().then(setHealth).catch(() => setHealth([]));
     void api.secretStatus().then(setSecrets).catch(() => setSecrets({}));
@@ -61,6 +64,17 @@ export function Settings({
       setHealth(await api.health());
     } catch (e) {
       setVaultMsg({ ok: false, text: String(e) });
+    }
+  }
+
+  async function saveCal() {
+    try {
+      const p = await api.setCalendar(cal);
+      setCalMsg({ ok: true, text: `Reading ${p}` });
+      onVaultChanged();
+      setHealth(await api.health());
+    } catch (e) {
+      setCalMsg({ ok: false, text: String(e) });
     }
   }
 
@@ -107,6 +121,21 @@ export function Settings({
         <div className="row">
           <button className="btn" onClick={() => void saveVault()}>Save</button>
           {vaultMsg && <span className={vaultMsg.ok ? "ok" : "bad"}>{vaultMsg.text}</span>}
+        </div>
+
+        <h3>Calendar</h3>
+        <p>
+          A folder of <code>.ics</code> files. No account and no OAuth — most calendar apps can
+          export or subscribe to one, and this is what makes <code>calLoad</code> real. Google
+          Calendar arrives later and will sit behind the same Event model.
+        </p>
+        <label htmlFor="s-cal">Calendar folder</label>
+        <input id="s-cal" className="field" value={cal} spellCheck={false}
+               onChange={(e) => setCal(e.target.value)}
+               onKeyDown={(e) => { if (e.key === "Enter") void saveCal(); }} />
+        <div className="row">
+          <button className="btn" onClick={() => void saveCal()}>Save</button>
+          {calMsg && <span className={calMsg.ok ? "ok" : "bad"}>{calMsg.text}</span>}
         </div>
 
         <h3>Connectors</h3>

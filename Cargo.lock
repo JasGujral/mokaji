@@ -554,7 +554,19 @@ name = "mokaji-cli"
 version = "0.0.1"
 dependencies = [
  "chrono",
+ "mokaji-connector-ics",
  "mokaji-connector-vault",
+ "mokaji-core",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "mokaji-connector-ics"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "chrono",
  "mokaji-core",
  "serde_json",
  "tokio",

@@ -149,6 +149,41 @@ async fn run(command: &str, vault: &Path) -> std::process::ExitCode {
             }
             println!("\n  {n} open\n");
         }
+        "agenda" => {
+            let cal = mokaji_connector_vault::discover::remembered_calendar();
+            let Some(cal) = cal else {
+                println!("\n  no calendar folder set — point MOKaji at a folder of .ics files:");
+                println!("      mkdir -p ~/.config/mokaji && echo /path/to/ics > ~/.config/mokaji/calendar\n");
+                return std::process::ExitCode::SUCCESS;
+            };
+            let cals: Vec<Arc<dyn Connector>> =
+                vec![Arc::new(mokaji_connector_ics::IcsConnector::new(&cal))];
+            let out = router
+                .resolve(
+                    &cals,
+                    &StandardQuery {
+                        kind: Kind::Event,
+                        window: Some("today".into()),
+                        params: serde_json::Map::new(),
+                    },
+                )
+                .await;
+            for r in &out.records {
+                let AnyRecord::Event(e) = r else { continue };
+                let when = if e.data.all_day {
+                    "all day".to_string()
+                } else {
+                    e.data
+                        .start
+                        .with_timezone(&chrono::Local)
+                        .format("%H:%M")
+                        .to_string()
+                };
+                println!("  {when:>7}  {}", e.data.title);
+                println!("           ↳ {}", e.source_ref);
+            }
+            println!("\n  {} event(s) · {}\n", out.records.len(), cal.display());
+        }
         "chasers" => {
             let out = router.resolve(&connectors, &q(Kind::Chaser)).await;
             for r in &out.records {
