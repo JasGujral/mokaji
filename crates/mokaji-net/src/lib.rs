@@ -24,6 +24,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod imap;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 

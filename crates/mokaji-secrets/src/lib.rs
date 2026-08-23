@@ -29,6 +29,14 @@ pub mod service {
     pub const ANTHROPIC: &str = "com.mokaji.provider.anthropic";
     /// Google OAuth client id, client secret and refresh token.
     pub const GOOGLE_OAUTH: &str = "com.mokaji.oauth.google";
+    /// IMAP app password for the work mailbox.
+    ///
+    /// Two services rather than two accounts under one service, so revoking work access is one
+    /// `delete` that cannot possibly take personal with it. The blast radius of a mistake here is
+    /// "I have to re-enter one password", and it should stay that way.
+    pub const MAIL_WORK: &str = "com.mokaji.mail.work";
+    /// IMAP app password for the personal mailbox.
+    pub const MAIL_PERSONAL: &str = "com.mokaji.mail.personal";
 }
 
 /// Account names used within a [`service`].
@@ -41,6 +49,8 @@ pub mod account {
     pub const CLIENT_SECRET: &str = "client-secret";
     /// OAuth refresh token.
     pub const REFRESH_TOKEN: &str = "refresh-token";
+    /// An IMAP app password.
+    pub const APP_PASSWORD: &str = "app-password";
 }
 
 /// A credential value that refuses to print itself.

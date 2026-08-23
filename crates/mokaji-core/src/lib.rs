@@ -24,6 +24,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod briefing;
 pub mod connector;
 pub mod error;
 pub mod intent;

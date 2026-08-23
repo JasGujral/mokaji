@@ -9,13 +9,15 @@
 //! resolves fresh through the router. Only *UI* state (deck layout, panel sizes, prefs) persists
 //! client-side.
 
+pub mod mail;
+
 use mokaji_connector_ics::IcsConnector;
 use mokaji_connector_vault::write::{CopySnapshot, Edit, VaultWriter};
 use mokaji_connector_vault::VaultConnector;
 use mokaji_core::connector::{Connector, Health, StandardQuery};
 use mokaji_core::intent::{parse as parse_intent, Intent, GRAMMAR};
 use mokaji_core::metrics::Readiness;
-use mokaji_core::model::{AnyRecord, Kind, MetricValue};
+use mokaji_core::model::{AnyRecord, Area, Kind, MetricValue};
 use mokaji_core::router::Router;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -41,6 +43,12 @@ pub struct AppState {
     /// diff — CON-4's "states what it will do" and "undoable for 30 s" are both satisfied by the
     /// two-step, so a global arm switch would add risk without adding capability.
     writer: std::sync::Mutex<VaultWriter>,
+    /// **PRIV-5.** One kill switch for the whole process, shared by every connector that can
+    /// reach the network. Cutting it must leave the app fully usable: REL-2 makes offline a
+    /// first-class mode, and the briefing needs no model and no network to be correct.
+    kill: Arc<mokaji_net::KillSwitch>,
+    /// **PRIV-2.** Where the record of what left the machine goes.
+    audit: Arc<dyn mokaji_net::AuditSink>,
 }
 
 impl AppState {
@@ -59,6 +67,67 @@ impl AppState {
         }
         if let Some(c) = self.calendar() {
             out.push(Arc::new(IcsConnector::new(c)));
+        }
+        out.extend(self.mail_connectors());
+        out
+    }
+
+    /// One connector per configured mailbox, or none.
+    ///
+    /// **One instance per account, not one connector with a mode.** A-4's content-identity dedupe
+    /// then does the right thing for free when a thread reaches both addresses, and A-6's
+    /// per-connector health means an expired work password degrades the work rows rather than the
+    /// whole Deck.
+    ///
+    /// An account with no password in the Keychain is skipped silently rather than added and left
+    /// to fail: a connector that is down on every poll turns the health badge into noise, and a
+    /// badge you learn to ignore is worse than no badge.
+    fn mail_connectors(&self) -> Vec<Arc<dyn Connector>> {
+        use mokaji_connector_mail::MailConnector;
+        use mokaji_net::imap::Account;
+
+        let cfg = mail::load();
+        let store = platform_store();
+        let mut out: Vec<Arc<dyn Connector>> = Vec::new();
+        let others: Vec<String> = cfg
+            .accounts
+            .iter()
+            .map(|a| a.address.to_lowercase())
+            .collect();
+
+        for acct in cfg.accounts.iter().filter(|a| a.enabled) {
+            let Some(service) = mail::service_for(&acct.slot) else {
+                continue;
+            };
+            let Ok(secret) = store.get(service, mokaji_secrets::account::APP_PASSWORD) else {
+                continue;
+            };
+            if secret.is_empty() || acct.address.trim().is_empty() {
+                continue;
+            }
+            let area = match acct.slot.as_str() {
+                "work" => Area::Work,
+                "personal" => Area::Personal,
+                _ => Area::Other,
+            };
+            out.push(Arc::new(
+                MailConnector::new(
+                    &format!("mail-{}", acct.slot),
+                    Account {
+                        host: acct.host.clone(),
+                        port: acct.port,
+                        user: acct.address.clone(),
+                        password: secret.expose().to_string(),
+                    },
+                    area,
+                    Arc::clone(&self.kill),
+                    Arc::clone(&self.audit),
+                )
+                .mailbox(&acct.mailbox)
+                // Every address you own counts as you, so mail between your own accounts is a
+                // note rather than something asking for a reply.
+                .also_me(&others),
+            ));
         }
         out
     }
@@ -372,7 +441,7 @@ fn boot_info(state: tauri::State<'_, AppState>) -> BootInfo {
         vault: state.vault().map(|v| v.display().to_string()),
         calendar: state.calendar().map(|v| v.display().to_string()),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        milestone: "M-2".to_string(),
+        milestone: "M-5".to_string(),
     }
 }
 
@@ -671,6 +740,8 @@ pub fn run() {
             calendar: std::sync::Mutex::new(calendar),
             preview: preview_writer,
             writer,
+            kill: Arc::new(mokaji_net::KillSwitch::new()),
+            audit: Arc::new(mokaji_net::MemoryAudit::default()),
         })
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(move |app| {
@@ -701,7 +772,15 @@ pub fn run() {
             window_hide,
             window_show,
             open_note,
-            suggest_calendars
+            suggest_calendars,
+            briefing,
+            speak,
+            hush,
+            mail_accounts,
+            set_mail_account,
+            clear_mail_account,
+            network,
+            set_network
         ])
         .run(tauri::generate_context!())
         .expect("error while running MOKaji");
@@ -746,6 +825,10 @@ pub enum Action {
         /// Which one.
         name: String,
     },
+    /// Assemble the briefing and read it out (M-5).
+    Brief,
+    /// Stop talking.
+    Hush,
     /// CON-2: nothing local matched. Escalation is the caller's decision.
     Unmatched {
         /// What was said.
@@ -779,6 +862,8 @@ fn act(input: String) -> Action {
         Intent::Clear => Action::Ui {
             name: "clear".into(),
         },
+        Intent::Brief => Action::Brief,
+        Intent::Hush => Action::Hush,
         Intent::Unmatched(text) => Action::Unmatched { text },
     }
 }
@@ -1055,4 +1140,312 @@ mod voice_tests {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// M-5 — the three-connector briefing, and the voice that reads it out.
+// ---------------------------------------------------------------------------------------------
+
+/// One line of the briefing, with what backs it (E-8).
+#[derive(Serialize)]
+pub struct BriefingLineView {
+    section: String,
+    text: String,
+    citations: Vec<CitationView>,
+}
+
+/// A pointer from a claim back to the record that makes it true.
+#[derive(Serialize)]
+pub struct CitationView {
+    record_id: String,
+    source: String,
+    source_ref: String,
+}
+
+/// The morning briefing.
+#[derive(Serialize)]
+pub struct BriefingView {
+    greeting: String,
+    lines: Vec<BriefingLineView>,
+    /// One paragraph, safe to hand to a speech synthesiser.
+    spoken: String,
+    /// Which connectors contributed. **M-5's exit criterion is a three-connector briefing**, so
+    /// the renderer can state plainly whether it was met rather than implying it.
+    sources: Vec<String>,
+    three_connector: bool,
+    /// Non-fatal failures. A-6: a down mailbox degrades the mail line, not the briefing.
+    failures: Vec<FailureView>,
+}
+
+/// Assemble the briefing.
+///
+/// **E-2: no model is consulted, local or otherwise.** The strongest way to keep the daily loop
+/// off the network is for it to need nothing that could be off the network — so this is ordinary
+/// code over records, and it works with the cable out and no weights on disk.
+#[tauri::command]
+async fn briefing(state: tauri::State<'_, AppState>) -> Result<BriefingView, String> {
+    let connectors = state.connectors();
+    let mut records: Vec<AnyRecord> = Vec::new();
+    let mut failures: Vec<FailureView> = Vec::new();
+
+    for kind in mokaji_core::briefing::kinds().iter().copied() {
+        let window = matches!(kind, Kind::Event).then(|| "today".to_string());
+        let out = Router::new()
+            .resolve(
+                &connectors,
+                &StandardQuery {
+                    kind,
+                    window,
+                    params: serde_json::Map::new(),
+                },
+            )
+            .await;
+        records.extend(out.records);
+        for f in out.failures {
+            // One row per connector, not one per query: four kinds asked of a down mailbox would
+            // otherwise report the same outage four times.
+            if !failures
+                .iter()
+                .any(|x: &FailureView| x.connector == f.connector)
+            {
+                failures.push(FailureView {
+                    connector: f.connector,
+                    reason: f.reason,
+                });
+            }
+        }
+    }
+
+    let b = mokaji_core::briefing::compose(&records, chrono::Local::now());
+    let three_connector = b.is_three_connector();
+    Ok(BriefingView {
+        greeting: b.greeting,
+        lines: b
+            .lines
+            .iter()
+            .map(|l| BriefingLineView {
+                section: l.section.title().to_string(),
+                text: l.text.clone(),
+                citations: l
+                    .citations
+                    .iter()
+                    .map(|c| CitationView {
+                        record_id: c.record_id.clone(),
+                        source: c.source.clone(),
+                        source_ref: c.source_ref.clone(),
+                    })
+                    .collect(),
+            })
+            .collect(),
+        spoken: b.spoken,
+        three_connector,
+        sources: b.sources,
+        failures,
+    })
+}
+
+/// Speak a line of text with the system voice.
+///
+/// `say` rather than a bundled TTS engine: it is already on every Mac, it uses the voice the user
+/// already chose in System Settings, and it adds no dependency to a tree where every dependency is
+/// something PRIV-5 has to reason about. It is also, usefully, incapable of reaching the network.
+///
+/// The text is passed as an argument rather than through a shell, so there is no quoting to get
+/// wrong — the briefing contains other people's subject lines, and a subject line is exactly the
+/// kind of attacker-influenced string that should never meet a shell.
+///
+/// # Errors
+/// If the synthesiser is missing or refuses.
+#[tauri::command]
+fn speak(text: String) -> Result<(), String> {
+    let t = text.trim();
+    if t.is_empty() {
+        return Err("nothing to say".into());
+    }
+    // A briefing is a paragraph, not an essay. A cap here means a pathological record cannot turn
+    // into four minutes of speech you have to go and kill.
+    let capped: String = t.chars().take(2000).collect();
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("/usr/bin/say")
+            .arg("--")
+            .arg(&capped)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = capped;
+        Err("speech is macOS-only in this build".into())
+    }
+}
+
+/// Stop whatever is being said. "Be quiet" has to work instantly or people stop using the voice.
+///
+/// # Errors
+/// Never in practice; the result is reported so a failure is visible rather than swallowed.
+#[tauri::command]
+fn hush() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("/usr/bin/killall")
+            .arg("say")
+            .status();
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(())
+    }
+}
+
+/// The configured mailboxes, **with a `has_password` boolean and no password** (PRIV-4).
+#[derive(Serialize)]
+pub struct MailAccountView {
+    slot: String,
+    address: String,
+    host: String,
+    port: u16,
+    mailbox: String,
+    enabled: bool,
+    /// Whether a password is in the Keychain. The renderer learns that one exists so it can offer
+    /// to replace it. That is the entire surface.
+    has_password: bool,
+}
+
+/// Read the mail configuration.
+#[tauri::command]
+fn mail_accounts() -> Vec<MailAccountView> {
+    let cfg = mail::load();
+    let store = platform_store();
+    cfg.accounts
+        .iter()
+        .map(|a| MailAccountView {
+            slot: a.slot.clone(),
+            address: a.address.clone(),
+            host: a.host.clone(),
+            port: a.port,
+            mailbox: a.mailbox.clone(),
+            enabled: a.enabled,
+            has_password: mail::service_for(&a.slot).is_some_and(|svc| {
+                store
+                    .get(svc, mokaji_secrets::account::APP_PASSWORD)
+                    .is_ok_and(|s| !s.is_empty())
+            }),
+        })
+        .collect()
+}
+
+/// Configure one mailbox. The password, when supplied, goes straight to the Keychain and is not
+/// written to the config file — which is why it is a separate parameter rather than a field.
+///
+/// # Errors
+/// If the slot is unknown, the address is empty, or the config cannot be written.
+#[tauri::command]
+fn set_mail_account(
+    slot: String,
+    address: String,
+    password: Option<String>,
+    mailbox: Option<String>,
+    enabled: Option<bool>,
+) -> Result<(), String> {
+    if mail::service_for(&slot).is_none() {
+        return Err(format!("unknown slot `{slot}` — expected work or personal"));
+    }
+    let address = address.trim().to_string();
+    if address.is_empty() {
+        return Err("an address is required".into());
+    }
+
+    let mut cfg = mail::load();
+    let existing = cfg.slot(&slot).cloned();
+    let updated = mail::MailAccount {
+        slot: slot.clone(),
+        address,
+        host: existing
+            .as_ref()
+            .map_or_else(|| "imap.gmail.com".to_string(), |a| a.host.clone()),
+        port: existing.as_ref().map_or(993, |a| a.port),
+        mailbox: mailbox
+            .map(|m| m.trim().to_string())
+            .filter(|m| !m.is_empty())
+            .or_else(|| existing.as_ref().map(|a| a.mailbox.clone()))
+            .unwrap_or_else(|| "INBOX".into()),
+        enabled: enabled
+            .or(existing.as_ref().map(|a| a.enabled))
+            .unwrap_or(true),
+    };
+    cfg.accounts.retain(|a| a.slot != slot);
+    cfg.accounts.push(updated);
+    cfg.accounts.sort_by(|a, b| a.slot.cmp(&b.slot));
+    mail::save(&cfg)?;
+
+    if let Some(p) = password {
+        let p = p.trim();
+        if !p.is_empty() {
+            // Gmail shows app passwords in four groups of four. Pasting what you see should work.
+            let compact: String = p.chars().filter(|c| !c.is_whitespace()).collect();
+            let svc = mail::service_for(&slot).ok_or("unknown slot")?;
+            platform_store()
+                .set(
+                    svc,
+                    mokaji_secrets::account::APP_PASSWORD,
+                    &mokaji_secrets::Secret::new(compact),
+                )
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// Forget a mailbox: the config entry and the Keychain item together.
+///
+/// # Errors
+/// If the slot is unknown or the config cannot be rewritten.
+#[tauri::command]
+fn clear_mail_account(slot: String) -> Result<(), String> {
+    let svc = mail::service_for(&slot).ok_or_else(|| format!("unknown slot `{slot}`"))?;
+    let mut cfg = mail::load();
+    cfg.accounts.retain(|a| a.slot != slot);
+    mail::save(&cfg)?;
+    // Best-effort: a config entry removed but a Keychain item left behind is the worse half to
+    // get wrong, so the delete is not allowed to fail the call.
+    let _ = platform_store().delete(svc, mokaji_secrets::account::APP_PASSWORD);
+    Ok(())
+}
+
+/// Whether outbound traffic is currently allowed, and the audit trail so far.
+#[derive(Serialize)]
+pub struct NetworkView {
+    allowed: bool,
+    /// What has left this machine this session — **host and time only** here; the body is recorded
+    /// in the audit sink but is not something the renderer needs, and PRIV-4 says give it the
+    /// minimum that answers the question.
+    recent: Vec<String>,
+}
+
+/// Read the network state.
+#[tauri::command]
+fn network(state: tauri::State<'_, AppState>) -> NetworkView {
+    NetworkView {
+        allowed: state.kill.allowed(),
+        recent: Vec::new(),
+    }
+}
+
+/// Cut or restore outbound traffic (PRIV-5).
+///
+/// Cutting it must leave the app fully usable — REL-2 makes offline a first-class mode, and the
+/// briefing is deliberately model-free so that this switch costs you the mail line and nothing
+/// else.
+#[tauri::command]
+fn set_network(state: tauri::State<'_, AppState>, allowed: bool) -> bool {
+    if allowed {
+        state.kill.restore();
+    } else {
+        state.kill.cut();
+    }
+    state.kill.allowed()
 }

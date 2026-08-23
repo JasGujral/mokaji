@@ -56,7 +56,7 @@ jobs:
       - name: assert no crate but mokaji-net can reach the network
         run: |
           set -euo pipefail
-          NET_CRATES='reqwest|hyper|ureq|curl|tokio-tungstenite|socket2|tiny_http|axum|warp'
+          NET_CRATES='reqwest|hyper|ureq|curl|tokio-tungstenite|socket2|tiny_http|axum|warp|rustls|tokio-rustls|webpki-roots|native-tls|openssl|quinn|trust-dns|hickory|async-imap|imap|lettre|smtp'
           fail=0
           for manifest in crates/*/Cargo.toml src-tauri/Cargo.toml; do
             # NB: this must keep passing once crates/mokaji-audio exists (M-2). If it ever fails
@@ -65,6 +65,13 @@ jobs:
             case "$manifest" in */mokaji-net/*) continue ;; esac
             if grep -Eq "^[[:space:]]*($NET_CRATES)[[:space:]]*=" "$manifest"; then
               echo "::error file=$manifest::networking dependency outside mokaji-net (PRIV-5)"
+              fail=1
+            fi
+            # tokio is a workspace-wide dependency for its runtime and channels, so the crate name
+            # alone proves nothing. The `net` feature is the part that opens sockets, and it must
+            # exist in exactly one manifest.
+            if grep -E "^[[:space:]]*tokio[[:space:]]*=" "$manifest" | grep -q '"net"'; then
+              echo "::error file=$manifest::tokio's `net` feature outside mokaji-net (PRIV-5)"
               fail=1
             fi
           done

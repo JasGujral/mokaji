@@ -1,0 +1,24 @@
+[package]
+name        = "mokaji-connector-mail"
+description = "Reads mail over IMAP through mokaji-net. Read and classify only — never sends, never deletes."
+version.workspace      = true
+edition.workspace      = true
+license.workspace      = true
+publish.workspace      = true
+rust-version.workspace = true
+
+[dependencies]
+mokaji-core = { path = "../mokaji-core" }
+# The socket lives in mokaji-net, not here. PRIV-5 is what makes that a structural guarantee
+# rather than a promise: this manifest names no networking library, and CI fails if it ever does.
+mokaji-net  = { path = "../mokaji-net" }
+async-trait = { workspace = true }
+chrono      = { workspace = true }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[lints.rust]
+missing_docs = "warn"

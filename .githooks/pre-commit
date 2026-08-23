@@ -36,7 +36,7 @@ done <<< "$staged"
 
 # 3. PRIV-5 / PRIV-1 — the network boundary. Only mokaji-net may reach the network, so that
 #    "audio never leaves the device" is true by construction rather than by good intentions.
-net='reqwest|hyper|ureq|curl|tokio-tungstenite|socket2|tiny_http|axum|warp'
+net='reqwest|hyper|ureq|curl|tokio-tungstenite|socket2|tiny_http|axum|warp|rustls|tokio-rustls|webpki-roots|native-tls|openssl|quinn|trust-dns|hickory|async-imap|imap|lettre|smtp'
 while IFS= read -r f; do
   case "$f" in
     crates/mokaji-net/Cargo.toml) continue ;;
@@ -44,6 +44,12 @@ while IFS= read -r f; do
       if git show ":$f" 2>/dev/null | grep -Eq "^[[:space:]]*($net)[[:space:]]*="; then
         say "'$f' adds a networking dependency outside mokaji-net (PRIV-5)"
         say "if this is deliberate, it is a security review — commit with --no-verify and say why"
+        fail=1
+      fi
+      # tokio is used workspace-wide for its runtime and channels, so its name proves nothing.
+      # The `net` feature is the part that opens sockets, and it belongs in one manifest.
+      if git show ":$f" 2>/dev/null | grep -E "^[[:space:]]*tokio[[:space:]]*=" | grep -q '"net"'; then
+        say "'$f' enables tokio's 'net' feature outside mokaji-net (PRIV-5)"
         fail=1
       fi
       ;;

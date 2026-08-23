@@ -67,6 +67,16 @@ pub enum Intent {
         /// True to show, false to hide.
         on: bool,
     },
+    /// `brief me` — assemble the morning briefing, and read it out.
+    ///
+    /// M-5's exit criterion is a briefing *spoken and not dismissed*, which makes "say it" the
+    /// primary verb rather than a setting hidden behind one.
+    Brief,
+    /// `quiet` — stop talking, now.
+    ///
+    /// Its own intent rather than a modifier, because it has to work while something is being
+    /// said. A voice you cannot interrupt is one you stop switching on.
+    Hush,
     /// CON-2: nothing matched. The caller decides whether to escalate to a model.
     Unmatched(String),
 }
@@ -106,6 +116,8 @@ impl Intent {
             Self::TogglePanel { name, on } => {
                 format!("{} the {name} panel.", if *on { "Show" } else { "Hide" })
             }
+            Self::Brief => "Read the morning briefing out.".into(),
+            Self::Hush => "Stop talking.".into(),
             Self::Unmatched(s) => format!("No local command matched \"{s}\"."),
         }
     }
@@ -126,6 +138,8 @@ pub const GRAMMAR: &[(&str, &str)] = &[
         "tasks / agenda / chasers / vitals",
         "bring a panel to the front",
     ),
+    ("brief me", "assemble the morning briefing and read it out"),
+    ("quiet", "stop talking"),
     ("status", "show the Reactor Core readout"),
     ("help", "this list"),
     ("clear", "clear the console"),
@@ -161,6 +175,16 @@ pub fn parse(input: &str, today: NaiveDate) -> Intent {
             }
         }
         "status" | "readiness" | "how am i doing" => return Intent::Status,
+        // M-5. "Brief me" is the whole daily loop in two words, so it gets the short forms.
+        "brief me"
+        | "brief"
+        | "read the briefing"
+        | "read my briefing"
+        | "read it out"
+        | "what's my day"
+        | "whats my day"
+        | "what does my day look like" => return Intent::Brief,
+        "quiet" | "be quiet" | "stop talking" | "hush" | "shut up" | "stop" => return Intent::Hush,
         "help" | "commands" => return Intent::Help,
         "clear" | "clear console" => return Intent::Clear,
         // Window control. These are the commands that make a voice assistant feel like it is on
@@ -560,6 +584,21 @@ mod tests {
             parse("add a task to call the accountant tomorrow", today()).describe(),
             "Add task \"call the accountant\", due 2026-08-24."
         );
+    }
+
+    #[test]
+    fn the_briefing_has_short_forms_because_it_is_the_daily_loop() {
+        // M-5's exit criterion is a briefing *spoken*, so "say it" is the primary verb rather
+        // than a setting hidden behind one.
+        for s in ["brief me", "read it out", "what's my day"] {
+            assert_eq!(parse(s, today()), Intent::Brief, "{s}");
+        }
+        // Interrupting has to work while something is being said, which is why it is its own
+        // intent rather than a modifier on the last one.
+        for s in ["quiet", "stop talking", "shut up"] {
+            assert_eq!(parse(s, today()), Intent::Hush, "{s}");
+        }
+        assert!(!parse("brief me", today()).is_mutating());
     }
 
     #[test]

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Action, Applied, BootInfo, CalEvent, Chaser, Core, HealthRow, Metric, Preview, Task } from "./types";
+import type { Action, Applied, Briefing, MailAccount, BootInfo, CalEvent, Chaser, Core, HealthRow, Metric, Preview, Task } from "./types";
 
 /** Every path to data goes through a Tauri command. The renderer holds no credential, opens no
  *  socket, and never touches the filesystem — SEC-1's allow-list is the entire surface. */
@@ -31,6 +31,24 @@ export const api = {
   /** Folders that look like calendars — `~/Library/Calendars` is the zero-credential route to
    *  every account macOS already knows about. */
   suggestCalendars: () => invoke<string[]>("suggest_calendars"),
+
+  /** M-5. Assembled locally, with citations computed from the records rather than requested from
+   *  a model — a claim that cannot be traced is indistinguishable from a plausible invention. */
+  briefing: () => invoke<Briefing>("briefing"),
+  speak: (text: string) => invoke<void>("speak", { text }),
+  hush: () => invoke<void>("hush"),
+
+  /** Configured mailboxes. Never a password — only whether one is set. */
+  mailAccounts: () => invoke<MailAccount[]>("mail_accounts"),
+  setMailAccount: (a: {
+    slot: string; address: string; password?: string; mailbox?: string; enabled?: boolean;
+  }) => invoke<void>("set_mail_account", a),
+  clearMailAccount: (slot: string) => invoke<void>("clear_mail_account", { slot }),
+
+  /** PRIV-5's kill switch, exposed so "stop talking to the network" is one click rather than a
+   *  setting you have to find. */
+  network: () => invoke<{ allowed: boolean; recent: string[] }>("network"),
+  setNetwork: (allowed: boolean) => invoke<boolean>("set_network", { allowed }),
 };
 
 /** Whether we are running inside the Tauri shell at all.

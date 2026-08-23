@@ -1,57 +1,91 @@
+import { useCallback, useEffect, useState } from "react";
 import { Panel } from "../components/Panel";
-import type { Core, Task } from "../lib/types";
+import { api } from "../lib/api";
+import type { Briefing } from "../lib/types";
 
-/** A written summary rather than more numbers. The Core already shows the gauges; repeating them
- *  in prose would be decoration. This says what to do about them. */
-export function BriefingPanel({
-  core, tasks,
-}: { core: Core | null; tasks: Task[] }) {
-  const now = new Date();
-  const date = now.toLocaleDateString(undefined, {
-    weekday: "long", day: "numeric", month: "long",
-  });
+/** The morning briefing — **M-5**.
+ *
+ *  Every line is assembled Rust-side from records, with citations computed from what was supplied.
+ *  Nothing here phrases anything: a briefing whose wording is generated in the renderer is one
+ *  whose claims cannot be traced, and tracing is the whole argument. */
+export function BriefingPanel({ tick }: { tick: number }) {
+  const [b, setB] = useState<Briefing | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [speaking, setSpeaking] = useState(false);
+  const [open, setOpen] = useState<number | null>(null);
 
-  let line = "Reading the vault…";
-  if (core) {
-    if (core.urgent > 0) {
-      line = `${core.urgent} task${core.urgent === 1 ? "" : "s"} due today. Clear ${core.urgent === 1 ? "it" : "those"} first — everything else can wait.`;
-    } else if (core.overdue > 0) {
-      line = `Nothing due today, but ${core.overdue} chaser${core.overdue === 1 ? " is" : "s are"} overdue. A nudge costs a minute.`;
-    } else if (core.open === 0) {
-      line = "The queue is empty. That is allowed.";
-    } else if (core.momentum === 0) {
-      line = `${core.open} open, nothing cleared yet today. Pick one and finish it — momentum only counts today's completions.`;
-    } else {
-      line = `${core.done_today} cleared today, ${core.open} still open. Nothing is on fire.`;
-    }
-  }
+  const load = useCallback(async () => {
+    try { setB(await api.briefing()); setErr(null); } catch (e) { setErr(String(e)); }
+  }, []);
 
-  const next = tasks.filter((t) => t.urgent).slice(0, 3);
-  const top = next.length > 0 ? next : tasks.slice(0, 3);
+  useEffect(() => { void load(); }, [load, tick]);
+
+  const say = async () => {
+    if (!b) return;
+    if (speaking) { await api.hush().catch(() => {}); setSpeaking(false); return; }
+    setSpeaking(true);
+    try { await api.speak(`${b.greeting} ${b.spoken}`); } catch (e) { setErr(String(e)); }
+    // `say` is fire-and-forget, so this is a best guess at duration rather than a callback.
+    // Roughly 14 characters a second at the default rate; the button stays a stop button until
+    // then, and pressing it early is the point.
+    const secs = Math.min(120, Math.max(4, (b.spoken.length + b.greeting.length) / 14));
+    setTimeout(() => setSpeaking(false), secs * 1000);
+  };
+
+  if (err) return <Panel title="Daily Briefing"><div className="empty">{err}</div></Panel>;
+  if (!b) return <Panel title="Daily Briefing"><div className="empty">Assembling…</div></Panel>;
 
   return (
-    <Panel title="Daily Briefing" sub={date}>
-      <p style={{ margin: "0 0 12px", lineHeight: 1.7, color: "var(--text)" }}>{line}</p>
-      {top.length > 0 && (
-        <>
-          <div style={{ color: "var(--muted-2)", fontSize: 10, letterSpacing: "0.2em",
-                        textTransform: "uppercase", fontFamily: "var(--font-display)",
-                        margin: "0 0 6px" }}>
-            {next.length > 0 ? "Due today" : "Top of the queue"}
+    <Panel title="Daily Briefing" sub={b.greeting}>
+      <div className="brief">
+        {b.lines.map((l, i) => (
+          <div className="brief-line" key={`${l.section}-${i}`}>
+            <span className="brief-sec">{l.section}</span>
+            <span className="brief-txt">{l.text}</span>
+            {l.citations.length > 0 && (
+              <button
+                className="brief-cite"
+                title="What backs this"
+                onClick={() => setOpen(open === i ? null : i)}
+              >
+                {l.citations.length}
+              </button>
+            )}
+            {open === i && (
+              <ul className="brief-refs">
+                {l.citations.map((c) => (
+                  <li key={c.record_id}>
+                    <span className="src">{c.source}</span> {c.source_ref}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-          {top.map((t) => (
-            <div className="task" key={t.id}>
-              <span className={t.urgent ? "due urgent" : "due"}>
-                {t.due ? new Date(t.due).toLocaleDateString() : "—"}
-              </span>
-              <span className="txt">{t.text}</span>
+        ))}
+      </div>
+
+      <div className="brief-foot">
+        <button className={`btn ${speaking ? "live" : ""}`} onClick={() => void say()}>
+          {speaking ? "Stop" : "Read it out"}
+        </button>
+        {/* M-5's exit criterion, stated rather than implied. Two connectors and a hopeful
+            sentence is not a three-connector briefing, and the panel should not pretend. */}
+        <span className={b.three_connector ? "ok" : "muted"}>
+          {b.sources.length === 0
+            ? "no connector answered"
+            : `${b.sources.length} of 3 senses · ${b.sources.join(" · ")}`}
+        </span>
+      </div>
+
+      {b.failures.length > 0 && (
+        <div className="brief-fail">
+          {b.failures.map((f) => (
+            <div key={f.connector}>
+              <b>{f.connector}</b> {f.reason}
             </div>
           ))}
-        </>
+        </div>
       )}
-      <p style={{ marginTop: 14, color: "var(--muted-2)", lineHeight: 1.6 }}>
-        Agenda and email arrive at M-5. Until then the briefing is vault-only, and says so.
-      </p>
     </Panel>
   );
 }
