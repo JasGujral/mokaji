@@ -13,6 +13,7 @@ import { BriefingPanel } from "./panels/BriefingPanel";
 import { TasksPanel } from "./panels/TasksPanel";
 import { AgendaPanel } from "./panels/AgendaPanel";
 import { ConsolePanel } from "./panels/ConsolePanel";
+import { Voice } from "./components/Voice";
 
 const manifest = manifestJson as unknown as PanelManifest;
 const DEFAULT_DECK = manifest.decks[0]?.panels ?? Object.keys(manifest.panels);
@@ -59,6 +60,7 @@ export default function App() {
   const [boot, setBoot] = useState<BootInfo | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
 
   useEffect(() => {
     try { localStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch { /* private mode */ }
@@ -94,11 +96,58 @@ export default function App() {
     // whatever it last read, which looks exactly like a calm day.
     const t = setInterval(() => void refresh(), 60_000);
     let stop: (() => void) | undefined;
+    let stopSummon: (() => void) | undefined;
     if (inTauri()) {
       void listen("vault-changed", () => void refresh()).then((un) => { stop = un; });
+      // V-1's floor: the OS-wide ⌥Space registered in Rust. A wake word that has not been trained
+      // yet is not a path, and an always-on HUD you have to go and click is just an app.
+      void listen("summon", () => setVoiceOpen(true)).then((un) => { stopSummon = un; });
     }
-    return () => { clearInterval(t); stop?.(); };
+    return () => { clearInterval(t); stop?.(); stopSummon?.(); };
   }, [refresh]);
+
+  // The same overlay from inside the window, for when it already has focus. ⌥Space is handled by
+  // the OS-level shortcut and never reaches here.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setVoiceOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  /** Resolve a spoken panel name to a manifest id.
+   *
+   *  The parser already restricted this to a closed list, so the job here is only to map the
+   *  words a person says onto the ids the manifest happens to use — "briefing" is the panel called
+   *  "Daily Briefing" whose id is `focus`, and nobody should have to know that. */
+  const panelId = (spoken: string): string | undefined => {
+    const n = spoken.trim().toLowerCase();
+    if (n in manifest.panels) return n;
+    const byName = Object.entries(manifest.panels).find(([, s]) => s.name.toLowerCase() === n);
+    if (byName) return byName[0];
+    const alias: Record<string, string> = {
+      "reactor core": "core",
+      briefing: "focus",
+      "daily briefing": "focus",
+      "task queue": "tasks",
+      "today's agenda": "agenda",
+      "command console": "console",
+    };
+    return alias[n];
+  };
+
+  const setPanel = (spoken: string, on: boolean) =>
+    setUi((u) => {
+      const id = panelId(spoken);
+      if (!id) return u;
+      const has = u.visible.includes(id);
+      if (on === has) return u;
+      return { ...u, visible: on ? [...u.visible, id] : u.visible.filter((x) => x !== id) };
+    });
 
   const toggle = (id: string) =>
     setUi((u) => ({
@@ -123,7 +172,7 @@ export default function App() {
     const spec = manifest.panels[id];
     if (!spec) return null;
     switch (spec.type) {
-      case "core":     return <CorePanel core={core} />;
+      case "core":     return <CorePanel core={core} events={events} />;
       case "briefing": return <BriefingPanel core={core} tasks={tasks} />;
       case "tasks":    return <TasksPanel tasks={tasks} />;
       case "agenda":   return <AgendaPanel events={events} hasCalendar={Boolean(boot?.calendar)} />;
@@ -181,6 +230,19 @@ export default function App() {
           )}
         </div>
       </div>
+
+      <Voice
+        open={voiceOpen}
+        onClose={() => setVoiceOpen(false)}
+        handlers={{
+          panel: setPanel,
+          ui: (name) => {
+            if (name === "status") setPanel("core", true);
+            if (name === "help") setPanel("console", true);
+          },
+          wrote: () => void refresh(),
+        }}
+      />
 
       {settingsOpen && (
         <Settings

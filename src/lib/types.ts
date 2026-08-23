@@ -80,3 +80,15 @@ export interface PanelManifest {
   panels: Record<string, PanelSpec>;
   decks: { id: string; name: string; panels: string[] }[];
 }
+
+/** What the Rust side says an utterance means — CON-3: typed and spoken produce the same tag.
+ *
+ *  The union is exhaustive so a new intent the UI forgets to handle is a type error at the
+ *  `switch`, not silence at the microphone. */
+export type Action =
+  | { kind: "write"; describe: string }
+  | { kind: "panel"; name: string; on: boolean }
+  | { kind: "open"; query: string }
+  | { kind: "window"; on: boolean }
+  | { kind: "ui"; name: string }
+  | { kind: "unmatched"; text: string };

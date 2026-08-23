@@ -42,12 +42,14 @@ export function Settings({
   const [secrets, setSecrets] = useState<Record<string, boolean>>({});
   const [key, setKey] = useState("");
   const [keyMsg, setKeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [calSuggestions, setCalSuggestions] = useState<string[]>([]);
 
   useEffect(() => { setVault(boot?.vault ?? ""); }, [boot?.vault]);
   useEffect(() => { setCal(boot?.calendar ?? ""); }, [boot?.calendar]);
   useEffect(() => {
     void api.health().then(setHealth).catch(() => setHealth([]));
     void api.secretStatus().then(setSecrets).catch(() => setSecrets({}));
+    void api.suggestCalendars().then(setCalSuggestions).catch(() => setCalSuggestions([]));
   }, [boot?.vault]);
 
   useEffect(() => {
@@ -125,18 +127,44 @@ export function Settings({
 
         <h3>Calendar</h3>
         <p>
-          A folder of <code>.ics</code> files. No account and no OAuth — most calendar apps can
-          export or subscribe to one, and this is what makes <code>calLoad</code> real. Google
-          Calendar arrives later and will sit behind the same Event model.
+          A folder of <code>.ics</code> files. No account and no OAuth — which is not a compromise
+          so much as the shorter road: macOS Calendar already speaks to Google, and it writes every
+          event of every account it syncs as its own <code>.ics</code> under{" "}
+          <code>~/Library/Calendars</code>. Add your accounts in{" "}
+          <b>System Settings → Internet Accounts</b>, point this at that folder, and both work and
+          personal calendars are readable here with nothing leaving the machine.
         </p>
         <label htmlFor="s-cal">Calendar folder</label>
         <input id="s-cal" className="field" value={cal} spellCheck={false}
                onChange={(e) => setCal(e.target.value)}
                onKeyDown={(e) => { if (e.key === "Enter") void saveCal(); }} />
+        {calSuggestions.length > 0 && (
+          <div className="row">
+            <span style={{ color: "var(--muted-2)" }}>found:</span>
+            {calSuggestions.map((c) => (
+              <button key={c} className="chip" onClick={() => setCal(c)}>{c}</button>
+            ))}
+          </div>
+        )}
         <div className="row">
           <button className="btn" onClick={() => void saveCal()}>Save</button>
           {calMsg && <span className={calMsg.ok ? "ok" : "bad"}>{calMsg.text}</span>}
         </div>
+
+        <h3>Voice</h3>
+        <p>
+          <b>⌥Space</b> anywhere on the machine opens the command bar, even when MOKaji is hidden;
+          <b> ⌘K</b> does the same when the window already has focus. Everything the Console can do,
+          it can do — add a task, tick one off, open a note in Obsidian, bring a panel forward, or
+          send the window away and call it back. One parser serves both, so a command cannot behave
+          differently typed and spoken.
+        </p>
+        <p>
+          Dictation needs the local speech engine, which arrives with the wake word (<b>Hey Kaji</b>)
+          at M-3; until then the command bar takes typing. Nothing spoken ever leaves this machine —
+          the audio crate has no network dependency and cannot acquire one without a visible change
+          that fails review and CI.
+        </p>
 
         <h3>Connectors</h3>
         {health.length === 0 ? (

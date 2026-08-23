@@ -372,7 +372,7 @@ fn boot_info(state: tauri::State<'_, AppState>) -> BootInfo {
         vault: state.vault().map(|v| v.display().to_string()),
         calendar: state.calendar().map(|v| v.display().to_string()),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        milestone: "M-1".to_string(),
+        milestone: "M-2".to_string(),
     }
 }
 
@@ -672,10 +672,12 @@ pub fn run() {
             preview: preview_writer,
             writer,
         })
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(move |app| {
             if let Some(v) = watched.clone() {
                 watch_vault(app.handle().clone(), v);
             }
+            register_summon(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -694,8 +696,363 @@ pub fn run() {
             undo_write,
             secret_status,
             set_secret,
-            clear_secret
+            clear_secret,
+            act,
+            window_hide,
+            window_show,
+            open_note,
+            suggest_calendars
         ])
         .run(tauri::generate_context!())
         .expect("error while running MOKaji");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Voice / window control — CON-3's "typed or spoken behaves identically", made literal.
+// ---------------------------------------------------------------------------------------------
+
+/// What the caller should *do* about an utterance.
+///
+/// The parser lives in `core` (CON-3) and returns an [`Intent`]; this is the same thing rendered
+/// for a renderer that must not import Rust types. The tag is exhaustive on purpose — a new intent
+/// that the UI forgets to handle shows up as an unknown tag in one `switch`, not as silence.
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Action {
+    /// A vault write. The renderer must show the diff and wait for a person — never auto-apply.
+    Write {
+        /// CON-4's sentence, said *before* anything happens.
+        describe: String,
+    },
+    /// Bring a Deck panel forward, or put it away.
+    Panel {
+        /// Panel name, articles and the word "panel" already stripped.
+        name: String,
+        /// True to show.
+        on: bool,
+    },
+    /// Open a note in Obsidian.
+    Open {
+        /// The search phrase, as spoken.
+        query: String,
+    },
+    /// Hide or restore the HUD itself.
+    Window {
+        /// True to show.
+        on: bool,
+    },
+    /// A read-only view command (`status`, `help`, `clear`).
+    Ui {
+        /// Which one.
+        name: String,
+    },
+    /// CON-2: nothing local matched. Escalation is the caller's decision.
+    Unmatched {
+        /// What was said.
+        text: String,
+    },
+}
+
+/// Turn one utterance — typed or transcribed — into an [`Action`].
+///
+/// This is the single entry point for the voice loop. It deliberately does **not** act: a
+/// mis-transcription must be recoverable, and the only reliable way to guarantee that is for the
+/// thing that hears you and the thing that changes your vault to be two separate steps.
+#[tauri::command]
+fn act(input: String) -> Action {
+    match parse_intent(&input, chrono::Local::now().date_naive()) {
+        i @ (Intent::AddTask { .. } | Intent::Capture { .. } | Intent::CompleteTask { .. }) => {
+            Action::Write {
+                describe: i.describe(),
+            }
+        }
+        Intent::TogglePanel { name, on } => Action::Panel { name, on },
+        Intent::Open { query } => Action::Open { query },
+        Intent::HideWindow => Action::Window { on: false },
+        Intent::ShowWindow => Action::Window { on: true },
+        Intent::Status => Action::Ui {
+            name: "status".into(),
+        },
+        Intent::Help => Action::Ui {
+            name: "help".into(),
+        },
+        Intent::Clear => Action::Ui {
+            name: "clear".into(),
+        },
+        Intent::Unmatched(text) => Action::Unmatched { text },
+    }
+}
+
+/// Put the HUD away.
+///
+/// # Errors
+/// If the window has gone.
+#[tauri::command]
+fn window_hide(window: tauri::Window) -> Result<(), String> {
+    window.hide().map_err(|e| e.to_string())
+}
+
+/// Bring the HUD back and give it focus — "come back" should not also require a click.
+///
+/// # Errors
+/// If the window has gone.
+#[tauri::command]
+fn window_show(window: tauri::Window) -> Result<(), String> {
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())
+}
+
+/// Open a note in Obsidian by title.
+///
+/// X-6 superseded `obsidian://` as the *read* path and kept it as UX: MOKaji reads the vault
+/// directly, but opening the real editor is one of the few things it should not try to do itself.
+///
+/// The vault name is taken from the folder name, which is what Obsidian uses.
+///
+/// # Errors
+/// If no vault is configured, nothing matches, or the URL handler refuses.
+#[tauri::command]
+fn open_note(state: tauri::State<'_, AppState>, query: String) -> Result<String, String> {
+    let root = state.vault().ok_or("no vault configured")?;
+    let vault_name = root
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .ok_or("vault path has no name")?;
+    let hit = find_note(&root, &query).ok_or_else(|| format!("no note matching \"{query}\""))?;
+    let url = format!(
+        "obsidian://open?vault={}&file={}",
+        urlencode(&vault_name),
+        urlencode(&hit)
+    );
+    open_url(&url)?;
+    Ok(hit)
+}
+
+/// Find the best note title match under `root`.
+///
+/// Prefix beats substring beats nothing, and shorter beats longer — "tide" should open *Tide
+/// Survey* rather than *Tide Survey Archive 2019*, because the shorter title is the one a person
+/// means when they say the short thing.
+fn find_note(root: &std::path::Path, query: &str) -> Option<String> {
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return None;
+    }
+    let mut best: Option<(u8, usize, String)> = None;
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for entry in rd.flatten() {
+            let p = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            if p.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            if !p.extension().is_some_and(|e| e.eq_ignore_ascii_case("md")) {
+                continue;
+            }
+            let stem = name.trim_end_matches(".md").to_string();
+            let lower = stem.to_lowercase();
+            let rank = if lower == needle {
+                0
+            } else if lower.starts_with(&needle) {
+                1
+            } else if lower.contains(&needle) {
+                2
+            } else {
+                continue;
+            };
+            let rel = p
+                .strip_prefix(root)
+                .unwrap_or(&p)
+                .to_string_lossy()
+                .to_string();
+            let cand = (rank, stem.len(), rel);
+            if best.as_ref().is_none_or(|b| cand < *b) {
+                best = Some(cand);
+            }
+        }
+    }
+    best.map(|(_, _, rel)| rel)
+}
+
+/// Percent-encode everything that is not unreserved. Small and local rather than a dependency:
+/// PRIV-5 makes every added crate a thing to justify, and this is twelve lines.
+fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~' | b'/') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// Hand a URL to the OS. Not a network call — the handler is another local application.
+fn open_url(url: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("/usr/bin/open");
+    #[cfg(not(target_os = "macos"))]
+    let mut cmd = std::process::Command::new("xdg-open");
+    cmd.arg(url)
+        .status()
+        .map_err(|e| e.to_string())
+        .and_then(|s| {
+            if s.success() {
+                Ok(())
+            } else {
+                Err("the URL handler refused".into())
+            }
+        })
+}
+
+/// The summon hotkey — **⌥Space**.
+///
+/// V-1 says the wake word is the primary path, but a wake word that has not been trained yet is
+/// not a path at all, and an always-on HUD you have to go and click is just an app. The hotkey is
+/// the floor: it works with the microphone off, in a meeting, and on the first run.
+///
+/// ⌥Space rather than ⌘Space (Spotlight) or ⌃Space (input sources). Failure to register is
+/// logged, not fatal — another application holding the combination is a reason to fall back to the
+/// window, not a reason to refuse to start.
+fn register_summon(app: &tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    use tauri_plugin_global_shortcut::{
+        Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
+    };
+
+    let summon = Shortcut::new(Some(Modifiers::ALT), Code::Space);
+    let handle = app.clone();
+    if let Err(e) = app
+        .global_shortcut()
+        .on_shortcut(summon, move |_, _, event| {
+            // Fire on press only; a shortcut handler that also fires on release toggles twice.
+            if event.state != ShortcutState::Pressed {
+                return;
+            }
+            if let Some(w) = handle.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+            let _ = handle.emit("summon", ());
+        })
+    {
+        eprintln!("mokaji: could not register the summon hotkey (Alt+Space): {e}");
+    }
+}
+
+/// Calendar folders worth offering, newest-useful first.
+///
+/// **The zero-credential path to Google Calendar.** macOS Calendar.app writes every event of every
+/// subscribed account as its own `.ics` under `~/Library/Calendars`, so adding a Google account in
+/// System Settings → Internet Accounts makes both work and personal calendars readable here with
+/// no OAuth client, no app verification, and nothing leaving the machine.
+#[tauri::command]
+fn suggest_calendars() -> Vec<String> {
+    let mut out = Vec::new();
+    let home = std::env::var("HOME").map(PathBuf::from).unwrap_or_default();
+    for rel in ["Library/Calendars", "Calendars", "Documents/Calendars"] {
+        let p = home.join(rel);
+        if p.is_dir() {
+            out.push(p.display().to_string());
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod voice_tests {
+    use super::{find_note, urlencode};
+
+    fn fixture() -> tempdir_lite::Dir {
+        let d = tempdir_lite::Dir::new("mokaji-open");
+        // Invented station notes. PRIV: fixtures never echo a real vault — they supply shape.
+        d.write("08 Journal/Daily/2026-08-23.md", "# log");
+        d.write("02 Projects/Tide Survey.md", "# tide");
+        d.write("02 Projects/Tide Survey Archive 1998.md", "# old");
+        d.write("03 Areas/Fog Signal Upkeep.md", "# fog");
+        d.write(".obsidian/workspace.json", "{}");
+        d
+    }
+
+    #[test]
+    fn the_shorter_title_wins_because_that_is_what_a_person_means() {
+        let d = fixture();
+        // "tide" must open *Tide Survey*, not *Tide Survey Archive 1998* — when someone says the
+        // short thing they mean the short thing.
+        assert_eq!(
+            find_note(d.path(), "tide").as_deref(),
+            Some("02 Projects/Tide Survey.md")
+        );
+    }
+
+    #[test]
+    fn substring_matches_but_a_miss_is_a_miss_rather_than_a_guess() {
+        let d = fixture();
+        assert_eq!(
+            find_note(d.path(), "fog signal").as_deref(),
+            Some("03 Areas/Fog Signal Upkeep.md")
+        );
+        // Opening the wrong note is worse than opening none: the failure is silent and the user
+        // has already looked away.
+        assert_eq!(find_note(d.path(), "harbour dues"), None);
+        assert_eq!(find_note(d.path(), "   "), None);
+    }
+
+    #[test]
+    fn dotfolders_are_not_notes() {
+        let d = fixture();
+        assert_eq!(find_note(d.path(), "workspace"), None);
+    }
+
+    #[test]
+    fn urlencode_escapes_what_obsidian_would_otherwise_read_as_syntax() {
+        assert_eq!(urlencode("Tide Survey"), "Tide%20Survey");
+        assert_eq!(urlencode("02 Projects/Tide.md"), "02%20Projects/Tide.md");
+        assert_eq!(urlencode("Q&A"), "Q%26A");
+        assert_eq!(urlencode("a-b_c.d~e"), "a-b_c.d~e");
+    }
+
+    /// A ten-line temporary directory rather than a dev-dependency. PRIV-5 makes every added crate
+    /// something to justify, and this is not worth a supply chain.
+    mod tempdir_lite {
+        use std::path::{Path, PathBuf};
+
+        pub struct Dir(PathBuf);
+
+        impl Dir {
+            pub fn new(tag: &str) -> Self {
+                let n = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_nanos());
+                let p = std::env::temp_dir().join(format!("{tag}-{n}"));
+                std::fs::create_dir_all(&p).expect("temp dir");
+                Self(p)
+            }
+
+            pub fn path(&self) -> &Path {
+                &self.0
+            }
+
+            pub fn write(&self, rel: &str, body: &str) {
+                let p = self.0.join(rel);
+                std::fs::create_dir_all(p.parent().expect("parent")).expect("mkdir");
+                std::fs::write(p, body).expect("write");
+            }
+        }
+
+        impl Drop for Dir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+    }
 }
